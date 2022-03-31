@@ -11,7 +11,10 @@ const (
 // routing table stores buckets of every known node on the network
 type routingTable struct {
 	localNode *node
-	buckets   []bucket
+	// the number of active buckets
+	total int
+	// buckets of nodes active in the routing table
+	buckets []bucket
 }
 
 // newRoutingTable creates a new routing table
@@ -19,7 +22,7 @@ func newRoutingTable(localNode *node) *routingTable {
 	buckets := make([]bucket, KEY_BITS)
 
 	for i := range buckets {
-		buckets[i].neighbours = make([]*node, 20)
+		buckets[i].nodes = make([]*node, 20)
 	}
 
 	return &routingTable{
@@ -29,7 +32,7 @@ func newRoutingTable(localNode *node) *routingTable {
 }
 
 func (t *routingTable) insert(n *node) {
-	t.buckets[bucketID(t.localNode.ID, n.ID)].insert(n)
+	t.buckets[bucketID(t.localNode.id, n.id)].insert(n)
 }
 
 // bucketID gets the correct bucket id for a given node, based on it's xor distance from our node

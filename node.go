@@ -2,19 +2,26 @@ package dht
 
 import (
 	"net"
+	"time"
 )
 
 // node represents a node on the network
 type node struct {
-	ID      []byte
-	Address *net.UDPAddr
+	// the 160 bit id of the node
+	id []byte
+	// the udp address of the node
+	address *net.UDPAddr
+	// the last time an event was received from this node
+	seen time.Time
+	// the number of expected responses we are waiting on
+	pending int
 }
 
 // newNode creates a new node from it's id and address
 func newNode(id []byte, address *net.UDPAddr) *node {
 	return &node{
-		ID:      id,
-		Address: address,
+		id:      id,
+		address: address,
 	}
 }
 
