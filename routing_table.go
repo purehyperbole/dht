@@ -37,8 +37,13 @@ func (t *routingTable) insert(n *node) {
 	t.buckets[bucketID(t.localNode.id, n.id)].insert(n)
 }
 
+// updates the timestamp of a node to seen
+func (t *routingTable) seen(id []byte) {
+	t.buckets[bucketID(t.localNode.id, id)].seen(id)
+}
+
 // finds the closest known node for a given key
-func (t *routingTable) findClosest(id []byte) *node {
+func (t *routingTable) closest(id []byte) *node {
 	offset := bucketID(t.localNode.id, id)
 
 	// scan outwardly from our selected bucket until we find a
@@ -73,7 +78,7 @@ func (t *routingTable) findClosest(id []byte) *node {
 }
 
 // finds the closest known nodes for a given key
-func (t *routingTable) findClosestN(id []byte, count int) []*node {
+func (t *routingTable) closestN(id []byte, count int) []*node {
 	offset := bucketID(t.localNode.id, id)
 
 	var nodes []*node

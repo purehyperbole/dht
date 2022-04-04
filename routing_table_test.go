@@ -23,7 +23,7 @@ func TestRoutingTableFindNearest(t *testing.T) {
 	// generate a random target key we want to look up
 	target := randomID()
 
-	n := rt.findClosest(target)
+	n := rt.closest(target)
 	require.NotNil(t, n)
 
 	// check all nodes to ensure we actually found the closest node
@@ -63,10 +63,10 @@ func TestRoutingTableFindNearestN(t *testing.T) {
 	// generate a random target key we want to look up
 	target := randomID()
 
-	ns := rt.findClosestN(target, 3)
+	ns := rt.closestN(target, 3)
 	require.Len(t, ns, 3)
 
-	assert.Equal(t, rt.findClosest(target).id, ns[0].id)
+	assert.Equal(t, rt.closest(target).id, ns[0].id)
 }
 
 func BenchmarkRoutingTableFindNearest(b *testing.B) {
@@ -87,7 +87,7 @@ func BenchmarkRoutingTableFindNearest(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		target := randomID()
 
-		rt.findClosest(target)
+		rt.closest(target)
 	}
 }
 
@@ -109,6 +109,54 @@ func BenchmarkRoutingTableFindNearestN(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		target := randomID()
 
-		rt.findClosestN(target, 3)
+		rt.closestN(target, 3)
+	}
+}
+
+func BenchmarkRoutingTableInsert(b *testing.B) {
+	rt := newRoutingTable(&node{
+		id: randomID(),
+	})
+
+	nodes := make([]*node, 10000)
+
+	// preallocate 10,000 nodes
+	// should simulate seeing the same
+	for i := 0; i < 10000; i++ {
+		nodes[i] = &node{
+			id: randomID(),
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		rt.insert(nodes[i%10000])
+	}
+}
+
+func BenchmarkRoutingTableSeen(b *testing.B) {
+	rt := newRoutingTable(&node{
+		id: randomID(),
+	})
+
+	nodes := make([]*node, 10000)
+
+	// preallocate 10,000 nodes
+	// should simulate seeing the same
+	for i := 0; i < 10000; i++ {
+		nodes[i] = &node{
+			id: randomID(),
+		}
+
+		rt.insert(nodes[i])
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		rt.seen(nodes[i%10000].id)
 	}
 }
