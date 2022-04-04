@@ -1,6 +1,8 @@
 package dht
 
 import (
+	"crypto/rand"
+	"math/big"
 	"net"
 	"time"
 )
@@ -19,6 +21,9 @@ type node struct {
 
 // newNode creates a new node from it's id and address
 func newNode(id []byte, address *net.UDPAddr) *node {
+	bi := big.NewInt(0)
+	bi.SetBytes(id)
+
 	return &node{
 		id:      id,
 		address: address,
@@ -43,4 +48,10 @@ func (n *node) findNode(nodeID []byte) ([]*node, error) {
 // findValue sends the rpc find value command
 func (n *node) findValue(key []byte) ([]*node, []byte, error) {
 	return nil, nil, nil
+}
+
+func randomID() []byte {
+	id := make([]byte, 20)
+	rand.Read(id)
+	return id
 }

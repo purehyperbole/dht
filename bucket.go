@@ -20,10 +20,8 @@ type bucket struct {
 }
 
 // inserts a node into the bucket. if the bucket
-// is full, it returns the least recently seen node.
-// this node needs to be pinged and if unresponsive,
-// can be evicted from the bucket
-func (b *bucket) insert(n *node) *node {
+// is full, it will return false
+func (b *bucket) insert(n *node) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -35,7 +33,7 @@ func (b *bucket) insert(n *node) *node {
 		b.nodes[b.size] = rn
 		b.size++
 
-		return nil
+		return true
 	}
 
 	// if the bucket is not full, add the new node to the end
@@ -44,7 +42,7 @@ func (b *bucket) insert(n *node) *node {
 		b.nodes[b.size] = n
 		b.size++
 
-		return nil
+		return true
 	}
 
 	var si int
@@ -71,20 +69,14 @@ func (b *bucket) insert(n *node) *node {
 	if stale != nil {
 		copy(b.nodes[si:], b.nodes[si+1:])
 		b.nodes[b.size] = n
-		return nil
+		return true
 	}
 
 	// if there's no space in the bucket, we add the node to the promotion cache
 	// so it can be added to the main node list when other nodes expire
 	b.stash(n)
 
-	return nil
-}
-
-// finds the closest known nodes for a given key
-func (b *bucket) findClosest(id []byte, count int) []*node {
-
-	return nil
+	return true
 }
 
 // gets a node by its id
@@ -99,6 +91,17 @@ func (b *bucket) get(nodeID []byte) *node {
 	}
 
 	return nil
+}
+
+//  iterates over each node in the bucket
+func (b *bucket) iterate(fn func(n *node)) {
+	b.mu.Lock()
+
+	for i := 0; i < b.size; i++ {
+		fn(b.nodes[i])
+	}
+
+	b.mu.Unlock()
 }
 
 // sets a node as recently seen by updating it's seen timestamp

@@ -2,9 +2,10 @@ package dht
 
 import (
 	"crypto/rand"
-	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBucketInsertAndGet(t *testing.T) {
@@ -24,8 +25,8 @@ func TestBucketInsertAndGet(t *testing.T) {
 	}
 
 	for i := range ids {
-		if b.get(ids[i]) == nil {
-			fmt.Println(i, "is not in the bucket")
+		if i >= 20 {
+			assert.Nil(t, b.get(ids[i]))
 		}
 	}
 }
