@@ -2,7 +2,6 @@ package dht
 
 import (
 	"crypto/rand"
-	"math/big"
 	"net"
 	"time"
 )
@@ -21,9 +20,6 @@ type node struct {
 
 // newNode creates a new node from it's id and address
 func newNode(id []byte, address *net.UDPAddr) *node {
-	bi := big.NewInt(0)
-	bi.SetBytes(id)
-
 	return &node{
 		id:      id,
 		address: address,

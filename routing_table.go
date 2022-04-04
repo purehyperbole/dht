@@ -42,7 +42,6 @@ func (t *routingTable) findClosest(id []byte) *node {
 
 	// scan outwardly from our selected bucket until we find a
 	// node that is close to the target key
-	// really not sure if this will work as expected...
 	for i := 0; i < 160; i++ {
 		var cd int
 		var cn *node
