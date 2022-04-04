@@ -2,6 +2,7 @@ package dht
 
 import (
 	"math/bits"
+	"sort"
 )
 
 const (
@@ -69,6 +70,41 @@ func (t *routingTable) findClosest(id []byte) *node {
 	}
 
 	return nil
+}
+
+// finds the closest known nodes for a given key
+func (t *routingTable) findClosestN(id []byte, count int) []*node {
+	offset := bucketID(t.localNode.id, id)
+
+	var nodes []*node
+
+	// scan outwardly from our selected bucket until we find a
+	// node that is close to the target key
+	for i := 0; i < 160; i++ {
+		if offset > 0 && offset < 160 {
+			t.buckets[offset].iterate(func(n *node) {
+				nodes = append(nodes, n)
+			})
+
+			if len(nodes) >= count {
+				break
+			}
+		}
+
+		if i%2 == 0 {
+			offset = offset + i + 1
+		} else {
+			offset = offset - i - 1
+		}
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		idst := distance(nodes[i].id, id)
+		jdst := distance(nodes[j].id, id)
+		return idst > jdst
+	})
+
+	return nodes[:count]
 }
 
 // bucketID gets the correct bucket id for a given node, based on it's xor distance from our node

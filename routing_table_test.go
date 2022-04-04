@@ -41,11 +41,32 @@ func TestRoutingTableFindNearest(t *testing.T) {
 
 		// we're sorting for the closest distance,
 		// which is actually the greatest number of
-		// matching bits, hence why >
+		// matching bits, hence why we compare with >
 		return d1 > d2
 	})
 
 	assert.Equal(t, n.id, nodes[0].id)
+}
+
+func TestRoutingTableFindNearestN(t *testing.T) {
+	rt := newRoutingTable(&node{
+		id: randomID(),
+	})
+
+	// insert 10000 nodes into the routing table
+	for i := 0; i < 10000; i++ {
+		rt.insert(&node{
+			id: randomID(),
+		})
+	}
+
+	// generate a random target key we want to look up
+	target := randomID()
+
+	ns := rt.findClosestN(target, 3)
+	require.Len(t, ns, 3)
+
+	assert.Equal(t, rt.findClosest(target).id, ns[0].id)
 }
 
 func BenchmarkRoutingTableFindNearest(b *testing.B) {
@@ -67,5 +88,27 @@ func BenchmarkRoutingTableFindNearest(b *testing.B) {
 		target := randomID()
 
 		rt.findClosest(target)
+	}
+}
+
+func BenchmarkRoutingTableFindNearestN(b *testing.B) {
+	rt := newRoutingTable(&node{
+		id: randomID(),
+	})
+
+	// insert 10000 nodes into the routing table
+	for i := 0; i < 10000; i++ {
+		rt.insert(&node{
+			id: randomID(),
+		})
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		target := randomID()
+
+		rt.findClosestN(target, 3)
 	}
 }
