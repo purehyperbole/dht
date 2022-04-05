@@ -8,7 +8,7 @@ import (
 
 // node represents a node on the network
 type node struct {
-	// the 160 bit id of the node
+	// the id of the node (default to 160 bits/20 bytes)
 	id []byte
 	// the udp address of the node
 	address *net.UDPAddr
@@ -47,7 +47,7 @@ func (n *node) findValue(key []byte) ([]*node, []byte, error) {
 }
 
 func randomID() []byte {
-	id := make([]byte, 20)
+	id := make([]byte, KEY_BYTES)
 	rand.Read(id)
 	return id
 }
