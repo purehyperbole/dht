@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/purehyperbole/dht/protocol"
 	"golang.org/x/sys/unix"
 )
 
@@ -63,12 +64,7 @@ func (d *DHT) listen() error {
 		Control: control,
 	}
 
-	l, err := cfg.Listen(context.Background(), "udp", d.config.ListenAddress)
-	if err != nil {
-		return err
-	}
-
-	c, err := l.Accept()
+	c, err := cfg.ListenPacket(context.Background(), "udp", d.config.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -88,13 +84,26 @@ func (d *DHT) process(c *net.UDPConn) {
 			panic(err)
 		}
 
-		fmt.Println("received from:", addr, "data:", string(b[:rb]))
+		fmt.Println("received from:", addr, "size:", rb)
+
+		e := protocol.GetRootAsEvent(b[:rb], 0)
+
+		switch e.Event() {
+		case protocol.EventTypePING:
+			e.
+		case protocol.EventTypePONG:
+		default:
+		case protocol.EventTypeSTORE:
+		case protocol.EventTypeFIND_NODE:
+		case protocol.EventTypeFIND_VALUE:
+		}
 	}
 }
 
 // borrow this from github.com/libp2p/go-reusepor as we don't care about other operating systems right now :)
 func control(network, address string, c syscall.RawConn) error {
 	var err error
+
 	c.Control(func(fd uintptr) {
 		err = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
 		if err != nil {
@@ -106,5 +115,6 @@ func control(network, address string, c syscall.RawConn) error {
 			return
 		}
 	})
+
 	return err
 }

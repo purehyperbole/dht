@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/google/flatbuffers v2.0.6+incompatible
 	github.com/stretchr/testify v1.7.1
+	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461
 )
 
 require (
