@@ -6,7 +6,12 @@ import (
 )
 
 const (
+	// K number of nodes in a bucket
+	K = 20
+	// KEY_BITS number of bits in a key
 	KEY_BITS = 160
+	// KEY_BYTES number of bytes in a key
+	KEY_BYTES = KEY_BITS / 8
 )
 
 // routing table stores buckets of every known node on the network
@@ -23,7 +28,7 @@ func newRoutingTable(localNode *node) *routingTable {
 	buckets := make([]bucket, KEY_BITS)
 
 	for i := range buckets {
-		buckets[i].nodes = make([]*node, 20)
+		buckets[i].nodes = make([]*node, K)
 	}
 
 	return &routingTable{
@@ -48,11 +53,11 @@ func (t *routingTable) closest(id []byte) *node {
 
 	// scan outwardly from our selected bucket until we find a
 	// node that is close to the target key
-	for i := 0; i < 160; i++ {
+	for i := 0; i < KEY_BITS; i++ {
 		var cd int
 		var cn *node
 
-		if offset > 0 && offset < 160 {
+		if offset > 0 && offset < KEY_BITS {
 			t.buckets[offset].iterate(func(n *node) {
 				// find a node which has the most matching bits
 				nd := distance(n.id, id)
@@ -62,6 +67,8 @@ func (t *routingTable) closest(id []byte) *node {
 				}
 			})
 
+			// TODO : this sometimes returns suboptimal results compared
+			// to scanning the whole bucket, investigate why
 			if cn != nil {
 				return cn
 			}
@@ -85,8 +92,8 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 
 	// scan outwardly from our selected bucket until we find a
 	// node that is close to the target key
-	for i := 0; i < 160; i++ {
-		if offset > 0 && offset < 160 {
+	for i := 0; i < KEY_BITS; i++ {
+		if offset > 0 && offset < KEY_BITS {
 			t.buckets[offset].iterate(func(n *node) {
 				nodes = append(nodes, n)
 			})
@@ -129,7 +136,7 @@ func distance(localID, targetID []byte) int {
 	var pfx int
 
 	// xor each byte and check for the number of 0 least significant bits
-	for i := 0; i < KEY_BITS/8; i++ {
+	for i := 0; i < KEY_BYTES; i++ {
 		d := localID[i] ^ targetID[i]
 
 		if d == 0 {

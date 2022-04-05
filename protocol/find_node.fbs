@@ -1,0 +1,10 @@
+include "node.fbs";
+
+namespace Kademlia;
+
+table FindNode {
+  key:    [ubyte];
+  nodes:  [Node];
+}
+
+root_type FindNode;

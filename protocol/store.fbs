@@ -1,0 +1,9 @@
+namespace Kademlia;
+
+table Store {
+  key:    [ubyte];
+  value:  [ubyte];
+  ttl:    long;
+}
+
+root_type Store;

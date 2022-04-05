@@ -1,0 +1,8 @@
+namespace Kademlia;
+
+table Node {
+  id:      [ubyte];
+  address: [ubyte];
+}
+
+root_type Node;

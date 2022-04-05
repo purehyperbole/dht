@@ -1,0 +1,9 @@
+namespace Kademlia;
+
+enum EventType : byte {
+    PING = 0,
+    PONG = 1,
+    STORE = 2,
+    FIND_NODE = 3,
+    FIND_VALUE = 4,
+}
