@@ -1,8 +1,6 @@
 package dht
 
 import (
-	"crypto/rand"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -10,29 +8,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDHT(t *testing.T) {
+func TestDHTStoreFindLocal(t *testing.T) {
 	c := &Config{
+		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
 	}
 
-	_, err := New(c)
+	// create a new dht with no nodes
+	dht, err := New(c)
 	require.Nil(t, err)
 
+	// add itself to it's routing table
 	addr, err := net.ResolveUDPAddr("udp", c.ListenAddress)
 	require.Nil(t, err)
 
-	conn, err := net.DialUDP("udp", nil, addr)
-	require.Nil(t, err)
+	dht.routing.insert(&node{
+		id:      c.LocalID,
+		address: addr,
+	})
 
-	data := make([]byte, 64000)
-	rand.Read(data)
+	// create a channel to handle our callback in a blocking way
+	ch := make(chan error, 1)
 
-	wb, err := conn.Write(data)
-	//wb, err := conn.Write([]byte("hello there"))
-	fmt.Println(err)
-	require.Nil(t, err)
+	// attempt to store some data
+	key := randomID()
+	value := randomID()
 
-	fmt.Println("wrote", wb, "bytes")
+	dht.Store(key, value, time.Hour, func(err error) {
+		ch <- err
+	})
 
-	time.Sleep(time.Second)
+	require.Nil(t, <-ch)
 }

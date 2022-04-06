@@ -41,6 +41,10 @@ func New(cfg *Config) (*DHT, error) {
 		return nil, errors.New("node id length is incorrect")
 	}
 
+	if cfg.Timeout.Nanoseconds() == 0 {
+		cfg.Timeout = time.Minute
+	}
+
 	if cfg.Listeners < 1 {
 		cfg.Listeners = runtime.GOMAXPROCS(0)
 	}
@@ -101,6 +105,11 @@ func (d *DHT) listen() error {
 func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err error)) {
 	// get the k closest nodes to store the value to
 	ns := d.routing.closestN(key, K)
+
+	if len(ns) < 1 {
+		callback(errors.New("no nodes found!"))
+		return
+	}
 
 	// track the number of successful stores we've had from each node
 	// before calling the user provided callback

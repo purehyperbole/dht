@@ -97,8 +97,11 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 
 	// scan outwardly from our selected bucket until we find a
 	// node that is close to the target key
-	for i := 0; i < KEY_BITS; i++ {
-		if offset > 0 && offset < KEY_BITS {
+	var i int
+	var scanned int
+
+	for {
+		if offset > -1 && offset < KEY_BITS {
 			t.buckets[offset].iterate(func(n *node) {
 				nodes = append(nodes, n)
 			})
@@ -106,6 +109,12 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 			if len(nodes) >= count {
 				break
 			}
+
+			scanned++
+		}
+
+		if scanned >= KEY_BITS {
+			break
 		}
 
 		if i%2 == 0 {
@@ -113,6 +122,8 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 		} else {
 			offset = offset - i - 1
 		}
+
+		i++
 	}
 
 	sort.Slice(nodes, func(i, j int) bool {
