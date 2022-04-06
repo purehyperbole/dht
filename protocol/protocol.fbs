@@ -25,18 +25,19 @@ table Store {
 union Any { FindNode, FindValue, Store }
 
 enum EventType : byte {
-    PING = 0,
-    PONG = 1,
-    STORE = 2,
-    FIND_NODE = 3,
+    PING =       0,
+    PONG =       1,
+    STORE =      2,
+    FIND_NODE =  3,
     FIND_VALUE = 4,
 }
 
 table Event {
-  id:      [ubyte];
-  sender:  [ubyte];
-  event:   EventType;
-  payload: Any;
+  id:       [ubyte];
+  sender:   [ubyte];
+  event:    EventType;
+  response: bool;
+  payload:  Any;
 }
 
 root_type Event;

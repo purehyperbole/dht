@@ -47,6 +47,11 @@ func (t *routingTable) seen(id []byte) {
 	t.buckets[bucketID(t.localNode.id, id)].seen(id)
 }
 
+// remove the node from the routing table
+func (t *routingTable) remove(id []byte) {
+	t.buckets[bucketID(t.localNode.id, id)].remove(id, true)
+}
+
 // finds the closest known node for a given key
 func (t *routingTable) closest(id []byte) *node {
 	offset := bucketID(t.localNode.id, id)
@@ -115,6 +120,10 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 		jdst := distance(nodes[j].id, id)
 		return idst > jdst
 	})
+
+	if len(nodes) < count {
+		return nodes
+	}
 
 	return nodes[:count]
 }

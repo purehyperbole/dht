@@ -53,6 +53,13 @@ func TestRoutingTableFindNearestN(t *testing.T) {
 		id: randomID(),
 	})
 
+	// generate a random target key we want to look up
+	target := randomID()
+
+	// try to find nodes on an empty table
+	ns := rt.closestN(target, 3)
+	require.Len(t, ns, 0)
+
 	// insert 10000 nodes into the routing table
 	for i := 0; i < 10000; i++ {
 		rt.insert(&node{
@@ -60,10 +67,8 @@ func TestRoutingTableFindNearestN(t *testing.T) {
 		})
 	}
 
-	// generate a random target key we want to look up
-	target := randomID()
-
-	ns := rt.closestN(target, 3)
+	// try to find closest nodes on a populated table
+	ns = rt.closestN(target, 3)
 	require.Len(t, ns, 3)
 
 	assert.Equal(t, rt.closest(target).id, ns[0].id)

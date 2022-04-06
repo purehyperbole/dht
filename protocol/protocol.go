@@ -622,8 +622,20 @@ func (rcv *Event) MutateEvent(n EventType) bool {
 	return rcv._tab.MutateInt8Slot(8, int8(n))
 }
 
-func (rcv *Event) PayloadType() Any {
+func (rcv *Event) Response() bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetBool(o + rcv._tab.Pos)
+	}
+	return false
+}
+
+func (rcv *Event) MutateResponse(n bool) bool {
+	return rcv._tab.MutateBoolSlot(10, n)
+}
+
+func (rcv *Event) PayloadType() Any {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
 		return Any(rcv._tab.GetByte(o + rcv._tab.Pos))
 	}
@@ -631,11 +643,11 @@ func (rcv *Event) PayloadType() Any {
 }
 
 func (rcv *Event) MutatePayloadType(n Any) bool {
-	return rcv._tab.MutateByteSlot(10, byte(n))
+	return rcv._tab.MutateByteSlot(12, byte(n))
 }
 
 func (rcv *Event) Payload(obj *flatbuffers.Table) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
 		rcv._tab.Union(obj, o)
 		return true
@@ -644,7 +656,7 @@ func (rcv *Event) Payload(obj *flatbuffers.Table) bool {
 }
 
 func EventStart(builder *flatbuffers.Builder) {
-	builder.StartObject(5)
+	builder.StartObject(6)
 }
 func EventAddId(builder *flatbuffers.Builder, id flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(id), 0)
@@ -661,11 +673,14 @@ func EventStartSenderVector(builder *flatbuffers.Builder, numElems int) flatbuff
 func EventAddEvent(builder *flatbuffers.Builder, event EventType) {
 	builder.PrependInt8Slot(2, int8(event), 0)
 }
+func EventAddResponse(builder *flatbuffers.Builder, response bool) {
+	builder.PrependBoolSlot(3, response, false)
+}
 func EventAddPayloadType(builder *flatbuffers.Builder, payloadType Any) {
-	builder.PrependByteSlot(3, byte(payloadType), 0)
+	builder.PrependByteSlot(4, byte(payloadType), 0)
 }
 func EventAddPayload(builder *flatbuffers.Builder, payload flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(4, flatbuffers.UOffsetT(payload), 0)
+	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(payload), 0)
 }
 func EventEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

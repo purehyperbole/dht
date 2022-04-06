@@ -26,26 +26,6 @@ func newNode(id []byte, address *net.UDPAddr) *node {
 	}
 }
 
-// ping sends the rpc ping command
-func (n *node) ping() error {
-	return nil
-}
-
-// store sends the rpc store command
-func (n *node) store(key, value []byte) error {
-	return nil
-}
-
-// findnode sends the rpc find node command
-func (n *node) findNode(nodeID []byte) ([]*node, error) {
-	return nil, nil
-}
-
-// findValue sends the rpc find value command
-func (n *node) findValue(key []byte) ([]*node, []byte, error) {
-	return nil, nil, nil
-}
-
 func randomID() []byte {
 	id := make([]byte, KEY_BYTES)
 	rand.Read(id)

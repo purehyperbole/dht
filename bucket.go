@@ -27,7 +27,7 @@ func (b *bucket) insert(n *node) bool {
 
 	// try to remove the node. If it exists in the bucket,
 	// then update it and add it to the end of the list
-	rn := b.remove(n.id)
+	rn := b.remove(n.id, false)
 	if rn != nil {
 		rn.seen = time.Now()
 		b.nodes[b.size] = rn
@@ -110,12 +110,18 @@ func (b *bucket) iterate(fn func(n *node)) {
 func (b *bucket) seen(nodeID []byte) {
 	n := b.get(nodeID)
 	if n != nil {
+		// todo improve the safety of this
 		n.seen = time.Now()
 	}
 }
 
 // removes a node and returns it if it exists
-func (b *bucket) remove(nodeID []byte) *node {
+func (b *bucket) remove(nodeID []byte, lock bool) *node {
+	if lock {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+	}
+
 	for i := b.size - 1; i >= 0; i-- {
 		if bytes.Equal(b.nodes[i].id, nodeID) {
 			r := b.nodes[i]
@@ -143,7 +149,7 @@ func (b *bucket) stash(n *node) {
 
 	// TODO : restrict the size of the cache and
 	// evict the oldest members of this cache before
-	// adding any new items
+	// adding any new items. a circular buf would be ideal here
 
 	b.cache = append(b.cache, n)
 }
