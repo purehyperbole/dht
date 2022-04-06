@@ -111,7 +111,7 @@ func (l *listener) pong(event *protocol.Event, addr *net.UDPAddr) error {
 func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	payloadTable := new(flatbuffers.Table)
 
-	if event.Payload(payloadTable) {
+	if !event.Payload(payloadTable) {
 		return errors.New("invalid store request payload")
 	}
 
@@ -144,7 +144,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
 	payloadTable := new(flatbuffers.Table)
 
-	if event.Payload(payloadTable) {
+	if !event.Payload(payloadTable) {
 		return errors.New("invalid find node request payload")
 	}
 
@@ -206,7 +206,7 @@ func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
 func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	payloadTable := new(flatbuffers.Table)
 
-	if event.Payload(payloadTable) {
+	if !event.Payload(payloadTable) {
 		return errors.New("invalid find node request payload")
 	}
 
