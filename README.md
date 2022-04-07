@@ -115,6 +115,7 @@ $ go test -v -bench=.
 - [x] benchmarks
 - [ ] peer refresh
 - [ ] node join/leave
+- [ ] latency based route selection
 
 ## Future Improvements
 - [ ] multiple values per key
