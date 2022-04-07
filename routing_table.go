@@ -2,6 +2,7 @@ package dht
 
 import (
 	"math/bits"
+	"net"
 	"sort"
 )
 
@@ -38,13 +39,16 @@ func newRoutingTable(localNode *node) *routingTable {
 }
 
 // insert a node to its corresponding bucket
-func (t *routingTable) insert(n *node) {
-	t.buckets[bucketID(t.localNode.id, n.id)].insert(n)
+func (t *routingTable) insert(id []byte, address *net.UDPAddr) {
+	t.buckets[bucketID(t.localNode.id, id)].insert(id, address)
 }
 
 // updates the timestamp of a node to seen
-func (t *routingTable) seen(id []byte) {
-	t.buckets[bucketID(t.localNode.id, id)].seen(id)
+// returns true if the node exists and false
+// if the node needs to be inserted into the
+// routing table
+func (t *routingTable) seen(id []byte) bool {
+	return t.buckets[bucketID(t.localNode.id, id)].seen(id)
 }
 
 // remove the node from the routing table

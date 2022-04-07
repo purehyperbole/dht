@@ -22,9 +22,7 @@ func TestRoutingTableFindNearest(t *testing.T) {
 
 	// insert 10000 nodes into the routing table
 	for i := 0; i < 10000; i++ {
-		rt.insert(&node{
-			id: randomID(),
-		})
+		rt.insert(randomID(), nil)
 	}
 
 	// search the populated routing table
@@ -67,9 +65,7 @@ func TestRoutingTableFindNearestN(t *testing.T) {
 
 	// insert 10000 nodes into the routing table
 	for i := 0; i < 10000; i++ {
-		rt.insert(&node{
-			id: randomID(),
-		})
+		rt.insert(randomID(), nil)
 	}
 
 	// try to find closest nodes on a populated table
@@ -107,9 +103,7 @@ func BenchmarkRoutingTableFindNearest(b *testing.B) {
 
 	// insert 10000 nodes into the routing table
 	for i := 0; i < 10000; i++ {
-		rt.insert(&node{
-			id: randomID(),
-		})
+		rt.insert(randomID(), nil)
 	}
 
 	b.ResetTimer()
@@ -129,9 +123,7 @@ func BenchmarkRoutingTableFindNearestN(b *testing.B) {
 
 	// insert 10000 nodes into the routing table
 	for i := 0; i < 10000; i++ {
-		rt.insert(&node{
-			id: randomID(),
-		})
+		rt.insert(randomID(), nil)
 	}
 
 	b.ResetTimer()
@@ -149,21 +141,19 @@ func BenchmarkRoutingTableInsert(b *testing.B) {
 		id: randomID(),
 	})
 
-	nodes := make([]*node, 10000)
+	nodes := make([][]byte, 10000)
 
 	// preallocate 10,000 nodes
 	// should simulate seeing the same
 	for i := 0; i < 10000; i++ {
-		nodes[i] = &node{
-			id: randomID(),
-		}
+		nodes[i] = randomID()
 	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rt.insert(nodes[i%10000])
+		rt.insert(nodes[i%10000], nil)
 	}
 }
 
@@ -172,22 +162,19 @@ func BenchmarkRoutingTableSeen(b *testing.B) {
 		id: randomID(),
 	})
 
-	nodes := make([]*node, 10000)
+	nodes := make([][]byte, 10000)
 
 	// preallocate 10,000 nodes
 	// should simulate seeing the same
 	for i := 0; i < 10000; i++ {
-		nodes[i] = &node{
-			id: randomID(),
-		}
-
-		rt.insert(nodes[i])
+		nodes[i] = randomID()
+		rt.insert(nodes[i], nil)
 	}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rt.seen(nodes[i%10000].id)
+		rt.seen(nodes[i%10000])
 	}
 }

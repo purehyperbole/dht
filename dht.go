@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"net"
 	"runtime"
 	"sync"
@@ -72,13 +74,41 @@ func New(cfg *Config) (*DHT, error) {
 		},
 	}
 
+	// start the udp listeners
 	err = d.listen()
 	if err != nil {
 		return nil, err
 	}
 
-	if cfg.BootstrapAddress != "" {
+	// add the local node to our own routing table
+	d.routing.insert(n.id, addr)
 
+	br := make(chan error, 3)
+
+	for i := range cfg.BootstrapAddresses {
+		addr, err := net.ResolveUDPAddr("udp", cfg.BootstrapAddresses[i])
+		if err != nil {
+			return nil, err
+		}
+
+		d.findNodes(&node{address: addr}, cfg.LocalID, func(err error) {
+			br <- err
+		})
+	}
+
+	var successes int
+
+	for range cfg.BootstrapAddresses {
+		err := <-br
+		if err != nil {
+			log.Printf("bootstrap failed: %s\n", err.Error())
+			continue
+		}
+		successes++
+	}
+
+	if successes < 1 && len(cfg.BootstrapAddresses) > 1 {
+		return nil, errors.New("bootstrapping failed")
 	}
 
 	return d, nil
@@ -313,6 +343,65 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 			callback(nil, err)
 			return
 		}
+	}
+}
+
+func (d *DHT) findNodes(n *node, target []byte, callback func(err error)) {
+	// get a spare buffer to generate our requests with
+	buf := d.pool.Get().(*flatbuffers.Builder)
+	defer d.pool.Put(buf)
+
+	// generate a new random request ID and event
+	rid := randomID()
+	req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
+
+	// select the next listener to send our request
+	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+		n.address,
+		rid,
+		req,
+		func(event *protocol.Event, err error) {
+			if err != nil {
+				callback(err)
+				return
+			}
+
+			payloadTable := new(flatbuffers.Table)
+
+			if !event.Payload(payloadTable) {
+				callback(errors.New("invalid response to find node request"))
+				return
+			}
+
+			f := new(protocol.FindNode)
+			f.Init(payloadTable.Bytes, payloadTable.Pos)
+
+			for i := 0; i < f.NodesLength(); i++ {
+				fn := new(protocol.Node)
+
+				if f.Nodes(fn, i) {
+					nad, err := net.ResolveUDPAddr("udp", string(fn.AddressBytes()))
+					if err != nil {
+						callback(fmt.Errorf("find node response includes an invalid node address: %w", err))
+						return
+					}
+
+					// create a copy of the node id
+					nid := make([]byte, fn.IdLength())
+					copy(nid, fn.IdBytes())
+
+					d.routing.insert(nid, nad)
+				}
+			}
+
+			callback(nil)
+		},
+	)
+
+	if err != nil {
+		// if we fail to write to the socket, send the error to the callback immediately
+		callback(err)
+		return
 	}
 }
 

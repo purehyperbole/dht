@@ -2,6 +2,7 @@ package dht
 
 import (
 	"bytes"
+	"net"
 	"sync"
 	"time"
 )
@@ -21,19 +22,24 @@ type bucket struct {
 
 // inserts a node into the bucket. if the bucket
 // is full, it will return false
-func (b *bucket) insert(n *node) bool {
+func (b *bucket) insert(id []byte, address *net.UDPAddr) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	// try to remove the node. If it exists in the bucket,
 	// then update it and add it to the end of the list
-	rn := b.remove(n.id, false)
+	rn := b.remove(id, false)
 	if rn != nil {
 		rn.seen = time.Now()
 		b.nodes[b.size] = rn
 		b.size++
 
 		return true
+	}
+
+	n := &node{
+		id:      id,
+		address: address,
 	}
 
 	// if the bucket is not full, add the new node to the end
@@ -81,12 +87,17 @@ func (b *bucket) insert(n *node) bool {
 
 // gets a node by its id
 func (b *bucket) get(nodeID []byte) *node {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	// check the main routing bucket
 	for i := 0; i < b.size; i++ {
 		if bytes.Equal(b.nodes[i].id, nodeID) {
 			return b.nodes[i]
+		}
+	}
+
+	// check the promotion cache
+	for i := 0; i < len(b.cache); i++ {
+		if bytes.Equal(b.cache[i].id, nodeID) {
+			return b.cache[i]
 		}
 	}
 
@@ -107,12 +118,18 @@ func (b *bucket) iterate(fn func(n *node)) {
 // sets a node as recently seen by updating it's seen timestamp
 // if it still exists in the bucket. this is called when a node has
 // responded to a request
-func (b *bucket) seen(nodeID []byte) {
+func (b *bucket) seen(nodeID []byte) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	n := b.get(nodeID)
 	if n != nil {
 		// todo improve the safety of this
 		n.seen = time.Now()
+		return true
 	}
+
+	return false
 }
 
 // removes a node and returns it if it exists

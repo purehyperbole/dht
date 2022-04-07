@@ -8,8 +8,8 @@ type Config struct {
 	LocalID []byte
 	// ListenAddress the udp ip and port to listen on
 	ListenAddress string
-	// BootstrapAddress the udp ip and port of the bootstrap node
-	BootstrapAddress string
+	// BootstrapAddresses the udp ip and port of the bootstrap nodes
+	BootstrapAddresses []string
 	// Listeners the number of threads that will listen on the designated udp port
 	Listeners int
 	// Timeout the amount of time before a peer is declared unresponsive and removed

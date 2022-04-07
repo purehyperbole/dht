@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"bytes"
 	"crypto/rand"
 	"testing"
 	"time"
@@ -21,14 +22,23 @@ func TestBucketInsertAndGet(t *testing.T) {
 		rand.Read(id)
 
 		ids[i] = id
-		b.insert(&node{id: id})
+		b.insert(id, nil)
 	}
 
 	assert.Equal(t, 20, b.size)
 
 	for i := range ids {
 		if i >= 20 {
-			assert.Nil(t, b.get(ids[i]))
+			var found bool
+
+			for x := 0; x < b.size; x++ {
+				if bytes.Equal(b.nodes[x].id, ids[i]) {
+					found = true
+					break
+				}
+			}
+
+			assert.False(t, found)
 		}
 	}
 }

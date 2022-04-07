@@ -63,12 +63,19 @@ func (l *listener) process() {
 
 		e := protocol.GetRootAsEvent(b[:rb], 0)
 
-		// update the senders last seen time in the routing table
-		l.routing.seen(e.SenderBytes())
+		// attempt to update the node first, but if it doesn't exist, insert it
+		if !l.routing.seen(e.SenderBytes()) {
+			// insert/update the node in the routing table
+			nid := make([]byte, e.SenderLength())
+			copy(nid, e.SenderBytes())
+
+			l.routing.insert(nid, addr)
+		}
 
 		// if this is a response to a query, send the response event to
 		// the registered callback
 		if e.Response() {
+			// update the senders last seen time in the routing table
 			callback, ok := l.cache.pop(e.IdBytes())
 			if ok {
 				callback(e, nil)
