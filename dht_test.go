@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -173,7 +174,7 @@ func BenchmarkDHTStoreLocal(b *testing.B) {
 				ch <- err
 			})
 
-			err = <-ch
+			<-ch
 		}
 	})
 }
@@ -319,6 +320,142 @@ func BenchmarkDHTFindLocal(b *testing.B) {
 
 		for pb.Next() {
 			dht.Find(key, func(value []byte, err error) {
+				ch <- err
+			})
+
+			<-ch
+		}
+	})
+}
+
+func BenchmarkDHTFindCluster(b *testing.B) {
+	dhts := make([]*DHT, 100)
+
+	for i := 0; i < 100; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9000+i),
+			Listeners:     1,
+		}
+
+		if i > 0 {
+			c.BootstrapAddresses = []string{
+				dhts[0].config.ListenAddress,
+			}
+		}
+
+		// create a new dht with no nodes
+		dht, err := New(c)
+		require.Nil(b, err)
+		defer dht.Close()
+
+		dhts[i] = dht
+	}
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	ch := make(chan error, 1)
+
+	keys := make([][]byte, 1000)
+
+	// store some data on the network
+	for i := 0; i < 1000; i++ {
+		r := randomID()
+
+		// attempt to store some data
+		dhts[0].Store(r, r, time.Hour, func(err error) {
+			ch <- err
+		})
+
+		<-ch
+
+		keys[i] = r
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	var pos int32
+
+	// test with multiple store requests in parallel
+	b.RunParallel(func(pb *testing.PB) {
+		ch := make(chan error, 1)
+
+		for pb.Next() {
+			// attempt to store some data
+			k := keys[atomic.AddInt32(&pos, 1)%1000]
+
+			dhts[0].Find(k, func(value []byte, err error) {
+				ch <- err
+			})
+
+			<-ch
+		}
+	})
+}
+
+func BenchmarkDHTFindClusterLargeValue(b *testing.B) {
+	dhts := make([]*DHT, 100)
+
+	for i := 0; i < 100; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9000+i),
+			Listeners:     1,
+		}
+
+		if i > 0 {
+			c.BootstrapAddresses = []string{
+				dhts[0].config.ListenAddress,
+			}
+		}
+
+		// create a new dht with no nodes
+		dht, err := New(c)
+		require.Nil(b, err)
+		defer dht.Close()
+
+		dhts[i] = dht
+	}
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	ch := make(chan error, 1)
+
+	keys := make([][]byte, 1000)
+
+	// store some data on the network
+	for i := 0; i < 1000; i++ {
+		k := randomID()
+		v := make([]byte, 2048)
+		rand.Read(v)
+
+		// attempt to store some data
+		dhts[0].Store(k, v, time.Hour, func(err error) {
+			ch <- err
+		})
+
+		<-ch
+
+		keys[i] = k
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	var pos int32
+
+	// test with multiple store requests in parallel
+	b.RunParallel(func(pb *testing.PB) {
+		ch := make(chan error, 1)
+
+		for pb.Next() {
+			// attempt to store some data
+			k := keys[atomic.AddInt32(&pos, 1)%1000]
+
+			dhts[0].Find(k, func(value []byte, err error) {
 				ch <- err
 			})
 

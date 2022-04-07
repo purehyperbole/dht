@@ -3,6 +3,8 @@ package dht
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -134,6 +136,17 @@ func (d *DHT) listen() error {
 
 // Store a value on the network. If the value fails to store, the provided callback will be returned with the error
 func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err error)) {
+	if len(key) != KEY_BYTES {
+		callback(errors.New("key must be 20 bytes in length"))
+		return
+	}
+
+	// value must be smaller than 32 kb
+	if len(value) > 32768 {
+		callback(errors.New("value must be less than 32kb in length"))
+		return
+	}
+
 	// get the k closest nodes to store the value to
 	ns := d.routing.closestN(key, K)
 
@@ -201,6 +214,11 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 // Find finds a value on the network if it exists. Any returned value will not be safe to
 // use outside of the callback, so you should copy it if its needed elsewhere
 func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
+	if len(key) != KEY_BYTES {
+		callback(nil, errors.New("key must be 20 bytes in length"))
+		return
+	}
+
 	// a correct implementation should send mutiple requests concurrently,
 	// but here we're only send a request to the closest node
 	n := d.routing.closest(key)
@@ -403,6 +421,75 @@ func (d *DHT) findNodes(n *node, target []byte, callback func(err error)) {
 		callback(err)
 		return
 	}
+}
+
+// monitors peers on the network and sends them ping requests
+func (d *DHT) monitor() {
+	for {
+		time.Sleep(d.config.Timeout / 2)
+
+		now := time.Now()
+
+		var nodes []*node
+
+		for i := 0; i < KEY_BITS; i++ {
+			d.routing.buckets[i].iterate(func(n *node) {
+				// if we haven't seen this node in a while,
+				// add it to list of nodes to ping
+				if n.seen.Add(d.config.Timeout / 2).After(now) {
+					nodes = append(nodes, n)
+				}
+			})
+		}
+
+		buf := d.pool.Get().(*flatbuffers.Builder)
+
+		for _, n := range nodes {
+			// send a ping to each node to see if it's still alive
+			rid := randomID()
+			req := eventPing(buf, rid, d.config.LocalID)
+
+			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+				n.address,
+				rid,
+				req,
+				func(event *protocol.Event, err error) {
+					if err != nil {
+						d.routing.remove(n.id)
+					} else {
+						d.routing.seen(n.id)
+					}
+				},
+			)
+
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+			}
+		}
+
+		d.pool.Put(buf)
+	}
+}
+
+// Key creates a new 20 byte key hasehed with sha1 from a string, byte slice or int
+func Key(k any) []byte {
+	var h [20]byte
+	switch key := k.(type) {
+	case string:
+		h = sha1.Sum([]byte(key))
+	case []byte:
+		h = sha1.Sum(key)
+	case int:
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, uint64(key))
+		h = sha1.Sum(b)
+	default:
+		panic("unsupported key type!")
+	}
+
+	return h[:]
 }
 
 // "borrow" this from github.com/libp2p/go-reuseport as we don't care about other operating systems right now :)
