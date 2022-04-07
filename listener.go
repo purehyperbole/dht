@@ -59,6 +59,8 @@ func (l *listener) process() {
 			panic(err)
 		}
 
+		var transferKeys bool
+
 		// log.Println("received event from:", addr, "size:", rb)
 
 		e := protocol.GetRootAsEvent(b[:rb], 0)
@@ -70,6 +72,10 @@ func (l *listener) process() {
 			copy(nid, e.SenderBytes())
 
 			l.routing.insert(nid, addr)
+
+			// this node is new to us, so we should send it any
+			// keys that are closer to it than to us
+			transferKeys = true
 		}
 
 		// if this is a response to a query, send the response event to
@@ -99,6 +105,42 @@ func (l *listener) process() {
 		if err != nil {
 			log.Println("failed to handle request: ", err.Error())
 		}
+
+		// TODO : this is going to end up with the receiver being ddos'ed
+		// with keys if storage is holding a large amount of values
+		// also, it's going to receive duplicate keys from other nodes?
+		// this will also lock our storage map and make us unresponsive to
+		// requests, potentially taking us out of other nodes routing tables.
+		// that may have a cascading effect...
+		if transferKeys {
+
+			l.storage.iterate(func(key, value []byte, ttl time.Duration) bool {
+				// TODO : keeping storage locked while we do socket io is not ideal
+				d1 := distance(l.localID, key)
+				d2 := distance(e.SenderBytes(), key)
+
+				if d2 > d1 {
+					// other node has more matching bits to the key, so we send it the value
+					rid := randomID()
+					req := eventStoreRequest(l.buffer, rid, l.localID, key, value, int64(ttl))
+
+					err = l.request(addr, rid, req, func(ev *protocol.Event, err error) {
+						if err != nil {
+							// just log this error for now, but it might be best to attempt to resend?
+							log.Println(err)
+						}
+					})
+
+					if err != nil {
+						// log error and stop sending
+						log.Println(err)
+						return false
+					}
+				}
+
+				return true
+			})
+		}
 	}
 }
 
@@ -122,7 +164,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	s := new(protocol.Store)
 	s.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	l.storage.set(s.KeyBytes(), s.ValueBytes(), time.Unix(s.Ttl(), 0))
+	l.storage.set(s.KeyBytes(), s.ValueBytes(), time.Duration(s.Ttl()))
 
 	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID, s.KeyBytes())
 

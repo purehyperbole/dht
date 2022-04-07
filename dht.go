@@ -166,7 +166,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	for _, n := range ns {
 		// shortcut the request if its to the local node
 		if bytes.Equal(n.id, d.config.LocalID) {
-			d.storage.set(key, value, time.Now().Add(ttl))
+			d.storage.set(key, value, ttl)
 
 			if len(ns) == 1 {
 				// we're the only node, so call the callback immediately
@@ -179,7 +179,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 
 		// generate a new random request ID and event
 		rid := randomID()
-		req := eventStoreRequest(buf, rid, d.config.LocalID, key, value)
+		req := eventStoreRequest(buf, rid, d.config.LocalID, key, value, int64(ttl))
 
 		// select the next listener to send our request
 		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(

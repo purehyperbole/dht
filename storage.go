@@ -6,8 +6,9 @@ import (
 )
 
 type value struct {
-	data []byte
-	ttl  time.Time
+	data    []byte
+	ttl     time.Duration
+	expires time.Time
 }
 
 // implement simple storage for now storage
@@ -38,7 +39,7 @@ func (s *storage) get(k []byte) ([]byte, bool) {
 	return v.data, ok
 }
 
-func (s *storage) set(k, v []byte, ttl time.Time) {
+func (s *storage) set(k, v []byte, ttl time.Duration) {
 	s.mu.Lock()
 
 	// we keep a copy of the value as it's actually
@@ -53,8 +54,22 @@ func (s *storage) set(k, v []byte, ttl time.Time) {
 	copy(vc, v)
 
 	s.store[string(k)] = &value{
-		data: vc,
-		ttl:  ttl,
+		data:    vc,
+		ttl:     ttl,
+		expires: time.Now().Add(ttl),
+	}
+
+	s.mu.Unlock()
+}
+
+func (s *storage) iterate(cb func(k, v []byte, ttl time.Duration) bool) {
+	s.mu.Lock()
+
+	for k, v := range s.store {
+		if !cb([]byte(k), v.data, v.ttl) {
+			s.mu.Unlock()
+			return
+		}
 	}
 
 	s.mu.Unlock()
@@ -70,7 +85,7 @@ func (s *storage) cleanup() {
 		s.mu.Lock()
 
 		for k, v := range s.store {
-			if v.ttl.After(now) {
+			if v.expires.After(now) {
 				delete(s.store, k)
 			}
 		}

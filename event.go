@@ -43,7 +43,7 @@ func eventPong(buf *flatbuffers.Builder, id, sender []byte) []byte {
 	return buf.FinishedBytes()
 }
 
-func eventStoreRequest(buf *flatbuffers.Builder, id, sender, key, value []byte) []byte {
+func eventStoreRequest(buf *flatbuffers.Builder, id, sender, key, value []byte, ttl int64) []byte {
 	buf.Reset()
 
 	k := buf.CreateByteVector(key)
@@ -53,6 +53,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender, key, value []byte) 
 	protocol.StoreStart(buf)
 	protocol.StoreAddKey(buf, k)
 	protocol.StoreAddValue(buf, v)
+	protocol.StoreAddTtl(buf, ttl)
 	s := protocol.StoreEnd(buf)
 
 	eid := buf.CreateByteVector(id)

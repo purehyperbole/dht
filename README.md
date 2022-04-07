@@ -2,11 +2,11 @@
 
 A Kademlia DHT implementation for Go with a focus on performance and ease of use. It is not seek to conform to any existing standards or implementations. 
 
- - Implements a 160 bit keyspace
- - Replication factor (K) of 20
- - Wire protocol using flatbuffers
+ - implements a 160 bit keyspace
+ - replication factor (K) of 20
+ - wire protocol using flatbuffers
  - SO_REUSEPORT to concurrently handle requests on the same port
- - Asynchronous API
+ - asynchronous api
 
 ## Usage
 
@@ -87,7 +87,6 @@ func main() {
 }
 ```
 
-
 ## Development
 
 To re-generate the flatbuffer definitions for the wire protocol:
@@ -113,8 +112,10 @@ $ go test -v -bench=.
 - [x] findNode
 - [x] findValue
 - [x] benchmarks
+- [x] node join/leave
+- [ ] user defined storage
 - [ ] peer refresh
-- [ ] node join/leave
+- [ ] key refresh
 - [ ] latency based route selection
 
 ## Future Improvements

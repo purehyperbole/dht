@@ -41,7 +41,7 @@ func TestDHTBoostrap(t *testing.T) {
 	}
 }
 
-func TestDHTStoreFindLocal(t *testing.T) {
+func TestDHTLocalStoreFind(t *testing.T) {
 	c := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
@@ -80,7 +80,7 @@ func TestDHTStoreFindLocal(t *testing.T) {
 	assert.Equal(t, value, rv)
 }
 
-func TestDHTStoreFindCluster(t *testing.T) {
+func TestDHTClusterStoreFind(t *testing.T) {
 	bc := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
@@ -136,7 +136,70 @@ func TestDHTStoreFindCluster(t *testing.T) {
 	assert.Equal(t, value, rv)
 }
 
-func BenchmarkDHTStoreLocal(b *testing.B) {
+func TestDHTClusterNodeJoin(t *testing.T) {
+	bc := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+		Listeners:     1,
+	}
+
+	// create a new bootstrap node
+	fmt.Println("starting bootstrap node")
+
+	bdht, err := New(bc)
+	require.Nil(t, err)
+	defer bdht.Close()
+
+	ch := make(chan error, 1)
+	keys := make([][]byte, 1000)
+
+	var transferrable [][]byte
+
+	// create config for a new node, but don't join yet
+	c := &Config{
+		LocalID:       randomID(),
+		ListenAddress: fmt.Sprintf("127.0.0.1:9001"),
+		BootstrapAddresses: []string{
+			bc.ListenAddress,
+		},
+		Listeners: 1,
+	}
+
+	// store some keys to the bootstrap node
+	for i := 0; i < 1000; i++ {
+		k := randomID()
+
+		bdht.Store(k, k, time.Hour, func(err error) {
+			ch <- err
+		})
+
+		require.Nil(t, <-ch)
+
+		keys[i] = k
+
+		d1 := distance(bc.LocalID, k)
+		d2 := distance(c.LocalID, k)
+
+		if d2 > d1 {
+			transferrable = append(transferrable, k)
+		}
+	}
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// add a new node to the network
+	dht, err := New(c)
+	require.Nil(t, err)
+	defer dht.Close()
+
+	time.Sleep(time.Second)
+
+	// TODO : finish test when we have a configurable storage backend that
+	// we can listen to store events on
+}
+
+func BenchmarkDHTLocalStore(b *testing.B) {
 	c := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
@@ -179,7 +242,7 @@ func BenchmarkDHTStoreLocal(b *testing.B) {
 	})
 }
 
-func BenchmarkDHTStoreCluster(b *testing.B) {
+func BenchmarkDHTClusterStore(b *testing.B) {
 	dhts := make([]*DHT, 100)
 
 	for i := 0; i < 100; i++ {
@@ -209,12 +272,12 @@ func BenchmarkDHTStoreCluster(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	// test with multiple store requests in parallel
 	b.RunParallel(func(pb *testing.PB) {
-		ch := make(chan error, 1)
-
 		key := randomID()
 		value := randomID()
+
+		// responses chan
+		ch := make(chan error, 50000)
 
 		for pb.Next() {
 			// attempt to store some data
@@ -227,7 +290,7 @@ func BenchmarkDHTStoreCluster(b *testing.B) {
 	})
 }
 
-func BenchmarkDHTStoreClusterLargeValue(b *testing.B) {
+func BenchmarkDHTClusterStoreLargeValue(b *testing.B) {
 	dhts := make([]*DHT, 100)
 
 	for i := 0; i < 100; i++ {
@@ -276,7 +339,7 @@ func BenchmarkDHTStoreClusterLargeValue(b *testing.B) {
 	})
 }
 
-func BenchmarkDHTFindLocal(b *testing.B) {
+func BenchmarkDHTLocalFind(b *testing.B) {
 	c := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
@@ -328,7 +391,7 @@ func BenchmarkDHTFindLocal(b *testing.B) {
 	})
 }
 
-func BenchmarkDHTFindCluster(b *testing.B) {
+func BenchmarkDHTClusterFind(b *testing.B) {
 	dhts := make([]*DHT, 100)
 
 	for i := 0; i < 100; i++ {
@@ -395,7 +458,7 @@ func BenchmarkDHTFindCluster(b *testing.B) {
 	})
 }
 
-func BenchmarkDHTFindClusterLargeValue(b *testing.B) {
+func BenchmarkDHTClusterFindLargeValue(b *testing.B) {
 	dhts := make([]*DHT, 100)
 
 	for i := 0; i < 100; i++ {
