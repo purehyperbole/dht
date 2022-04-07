@@ -157,7 +157,8 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	}
 }
 
-// Find finds a value on the network if it exists
+// Find finds a value on the network if it exists. Any returned value will not be safe to
+// use outside of the callback, so you should copy it if its needed elsewhere
 func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// a correct implementation should send mutiple requests concurrently,
 	// but here we're only send a request to the closest node

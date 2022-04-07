@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -37,7 +36,7 @@ func TestDHTStoreFindLocal(t *testing.T) {
 
 	// attempt to store some data
 	key := randomID()
-	value := []byte("HELLO") // randomID()
+	value := randomID()
 
 	dht.Store(key, value, time.Hour, func(err error) {
 		ch <- err
@@ -54,7 +53,5 @@ func TestDHTStoreFindLocal(t *testing.T) {
 	})
 
 	require.Nil(t, <-ch)
-	fmt.Println(string(value), string(rv))
-
 	assert.Equal(t, value, rv)
 }

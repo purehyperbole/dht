@@ -41,8 +41,19 @@ func (s *storage) get(k []byte) ([]byte, bool) {
 func (s *storage) set(k, v []byte, ttl time.Time) {
 	s.mu.Lock()
 
+	// we keep a copy of the value as it's actually
+	// read from a buffer that's going to be reused
+	// so we need to store this as a copy to avoid
+	// it getting overwritten by other data
+	// we don't need to do this for the key
+	// as the string() call allocates a new underlying
+	// array and creates a copy for us
+
+	vc := make([]byte, len(v))
+	copy(vc, v)
+
 	s.store[string(k)] = &value{
-		data: v,
+		data: vc,
 		ttl:  ttl,
 	}
 
