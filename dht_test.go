@@ -88,10 +88,11 @@ func BenchmarkDHTStoreLocal(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		ch := make(chan error, 1)
 
+		key := randomID()
+		value := randomID()
+
 		for pb.Next() {
 			// attempt to store some data
-			key := randomID()
-			value := randomID()
 
 			dht.Store(key, value, time.Hour, func(err error) {
 				ch <- err
@@ -142,6 +143,8 @@ func BenchmarkDHTFindLocal(b *testing.B) {
 	err = <-ch
 
 	// test with multiple find requests in parallel
+	// these requests are synchronous, you could maybe
+	// get some more performance running them async
 	b.RunParallel(func(pb *testing.PB) {
 		ch := make(chan error, 1)
 
