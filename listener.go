@@ -51,10 +51,15 @@ func (l *listener) process() {
 	for {
 		rb, addr, err := l.conn.ReadFromUDP(b)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				// network connection closed, so
+				// we can shutdown
+				return
+			}
 			panic(err)
 		}
 
-		log.Println("received event from:", addr, "size:", rb)
+		// log.Println("received event from:", addr, "size:", rb)
 
 		e := protocol.GetRootAsEvent(b[:rb], 0)
 

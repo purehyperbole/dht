@@ -197,6 +197,18 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	}
 }
 
+// Close shuts down the dht
+func (d *DHT) Close() error {
+	for i := 0; i < len(d.listeners); i++ {
+		err := d.listeners[i].conn.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
 func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err error), requests int) func(event *protocol.Event, err error) {
