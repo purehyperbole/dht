@@ -1,4 +1,4 @@
-# DHT [![Go Reference](https://pkg.go.dev/badge/github.com/purehyperbole/dht.svg)](https://pkg.go.dev/github.com/purehyperbole/dht) [![Go Report Card](https://goreportcard.com/badge/github.com/purehyperbole/dht)](https://goreportcard.com/report/github.com/purehyperbole/dht) [![Build Status](https://travis-ci.org/purehyperbole/dht.svg?branch=master)](https://travis-ci.org/purehyperbole/dht)
+# DHT [![Go Reference](https://pkg.go.dev/badge/github.com/purehyperbole/dht.svg)](https://pkg.go.dev/github.com/purehyperbole/dht) [![Go Report Card](https://goreportcard.com/badge/github.com/purehyperbole/dht)](https://goreportcard.com/report/github.com/purehyperbole/dht) ![Build Status](https://github.com/purehyperbole/dht/actions/workflows/ci.yml/badge.svg)
 
 A Kademlia DHT implementation for Go with a focus on performance and ease of use. It is not seek to conform to any existing standards or implementations. 
 
