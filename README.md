@@ -125,3 +125,4 @@ $ go test -v -bench=.
 - [ ] NAT traversal
 - [ ] support SO_REUSEPORT on mac/windows
 - [ ] configurable logging
+- [ ] ntp time
