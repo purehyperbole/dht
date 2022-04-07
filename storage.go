@@ -31,6 +31,10 @@ func (s *storage) get(k []byte) ([]byte, bool) {
 	v, ok := s.store[string(k)]
 	s.mu.Unlock()
 
+	if !ok {
+		return nil, false
+	}
+
 	return v.data, ok
 }
 

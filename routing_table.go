@@ -58,11 +58,14 @@ func (t *routingTable) closest(id []byte) *node {
 
 	// scan outwardly from our selected bucket until we find a
 	// node that is close to the target key
-	for i := 0; i < KEY_BITS; i++ {
+	var i int
+	var scanned int
+
+	for {
 		var cd int
 		var cn *node
 
-		if offset > 0 && offset < KEY_BITS {
+		if offset > -1 && offset < KEY_BITS {
 			t.buckets[offset].iterate(func(n *node) {
 				// find a node which has the most matching bits
 				nd := distance(n.id, id)
@@ -72,11 +75,15 @@ func (t *routingTable) closest(id []byte) *node {
 				}
 			})
 
-			// TODO : this sometimes returns suboptimal results compared
-			// to scanning the whole bucket, investigate why
 			if cn != nil {
 				return cn
 			}
+
+			scanned++
+		}
+
+		if scanned >= KEY_BITS {
+			break
 		}
 
 		if i%2 == 0 {
@@ -84,6 +91,8 @@ func (t *routingTable) closest(id []byte) *node {
 		} else {
 			offset = offset - i - 1
 		}
+
+		i++
 	}
 
 	return nil

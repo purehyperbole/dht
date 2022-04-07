@@ -24,6 +24,8 @@ func TestBucketInsertAndGet(t *testing.T) {
 		b.insert(&node{id: id})
 	}
 
+	assert.Equal(t, 20, b.size)
+
 	for i := range ids {
 		if i >= 20 {
 			assert.Nil(t, b.get(ids[i]))

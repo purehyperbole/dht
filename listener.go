@@ -28,23 +28,28 @@ type listener struct {
 	localID []byte
 }
 
-func newListener(conn *net.UDPConn, routing *routingTable, cache *cache, storage *storage, timeout time.Duration) *listener {
-	return &listener{
+func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage *storage, timeout time.Duration) *listener {
+	l := &listener{
 		conn:    conn,
 		routing: routing,
 		cache:   cache,
 		storage: storage,
 		timeout: timeout,
 		buffer:  flatbuffers.NewBuilder(65527),
+		localID: localID,
 	}
+
+	go l.process()
+
+	return l
 }
 
-func (l *listener) process(c *net.UDPConn) {
+func (l *listener) process() {
 	// buffer maximum udp payload
 	b := make([]byte, 65527)
 
 	for {
-		rb, addr, err := c.ReadFromUDP(b)
+		rb, addr, err := l.conn.ReadFromUDP(b)
 		if err != nil {
 			panic(err)
 		}
@@ -87,22 +92,9 @@ func (l *listener) process(c *net.UDPConn) {
 
 // send a pong response to the sender
 func (l *listener) pong(event *protocol.Event, addr *net.UDPAddr) error {
-	l.buffer.Reset()
+	resp := eventPong(l.buffer, event.IdBytes(), l.localID)
 
-	eid := l.buffer.CreateByteVector(event.IdBytes())
-	snd := l.buffer.CreateByteVector(l.localID)
-
-	protocol.EventStart(l.buffer)
-	protocol.EventAddId(l.buffer, eid)
-	protocol.EventAddSender(l.buffer, snd)
-	protocol.EventAddEvent(l.buffer, protocol.EventTypePONG)
-	protocol.EventAddResponse(l.buffer, true)
-
-	e := protocol.EventEnd(l.buffer)
-
-	l.buffer.Finish(e)
-
-	_, err := l.conn.WriteToUDP(l.buffer.FinishedBytes(), addr)
+	_, err := l.conn.WriteToUDP(resp, addr)
 
 	return err
 }
@@ -120,22 +112,9 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 
 	l.storage.set(s.KeyBytes(), s.ValueBytes(), time.Unix(s.Ttl(), 0))
 
-	l.buffer.Reset()
+	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID, s.KeyBytes())
 
-	eid := l.buffer.CreateByteVector(event.IdBytes())
-	snd := l.buffer.CreateByteVector(l.localID)
-
-	protocol.EventStart(l.buffer)
-	protocol.EventAddId(l.buffer, eid)
-	protocol.EventAddSender(l.buffer, snd)
-	protocol.EventAddEvent(l.buffer, protocol.EventTypeSTORE)
-	protocol.EventAddResponse(l.buffer, true)
-
-	e := protocol.EventEnd(l.buffer)
-
-	l.buffer.Finish(e)
-
-	_, err := l.conn.WriteToUDP(l.buffer.FinishedBytes(), addr)
+	_, err := l.conn.WriteToUDP(resp, addr)
 
 	return err
 }
@@ -151,54 +130,12 @@ func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindNode)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	l.buffer.Reset()
-
 	// find the K closest neighbours to the given target
 	nodes := l.routing.closestN(f.KeyBytes(), K)
 
-	// construct the node vector
-	ns := make([]flatbuffers.UOffsetT, len(nodes))
+	resp := eventFindNodeResponse(l.buffer, event.IdBytes(), l.localID, nodes)
 
-	for i, n := range nodes {
-		nid := l.buffer.CreateByteVector(n.id)
-		nad := l.buffer.CreateByteVector([]byte(n.address.String()))
-
-		protocol.NodeStart(l.buffer)
-		protocol.NodeAddId(l.buffer, nid)
-		protocol.NodeAddAddress(l.buffer, nad)
-		ns[i] = protocol.NodeEnd(l.buffer)
-	}
-
-	protocol.FindNodeStartNodesVector(l.buffer, len(nodes))
-
-	// prepend nodes to vector in reverse order
-	for i := len(nodes) - 1; i >= 0; i-- {
-		l.buffer.PrependUOffsetT(ns[i])
-	}
-
-	nv := l.buffer.EndVector(len(nodes))
-
-	// construct the find node table
-	protocol.FindNodeStart(l.buffer)
-	protocol.FindNodeAddNodes(l.buffer, nv)
-	fn := protocol.FindNodeEnd(l.buffer)
-
-	// construct the response event table
-	eid := l.buffer.CreateByteVector(event.IdBytes())
-	snd := l.buffer.CreateByteVector(l.localID)
-
-	protocol.EventStart(l.buffer)
-	protocol.EventAddId(l.buffer, eid)
-	protocol.EventAddSender(l.buffer, snd)
-	protocol.EventAddEvent(l.buffer, protocol.EventTypeFIND_NODE)
-	protocol.EventAddResponse(l.buffer, true)
-	protocol.EventAddPayload(l.buffer, fn)
-
-	e := protocol.EventEnd(l.buffer)
-
-	l.buffer.Finish(e)
-
-	_, err := l.conn.WriteToUDP(l.buffer.FinishedBytes(), addr)
+	_, err := l.conn.WriteToUDP(resp, addr)
 
 	return err
 }
@@ -215,75 +152,20 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 
 	v, ok := l.storage.get(f.KeyBytes())
 
-	l.buffer.Reset()
+	var resp []byte
 
 	// TODO : clean this up
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
-		vv := l.buffer.CreateByteVector(v)
-
-		protocol.FindValueStart(l.buffer)
-		protocol.FindValueAddValue(l.buffer, vv)
-		fv := protocol.FindValueEnd(l.buffer)
-
-		// construct the response event table
-		eid := l.buffer.CreateByteVector(event.IdBytes())
-		snd := l.buffer.CreateByteVector(l.localID)
-
-		protocol.EventStart(l.buffer)
-		protocol.EventAddId(l.buffer, eid)
-		protocol.EventAddSender(l.buffer, snd)
-		protocol.EventAddEvent(l.buffer, protocol.EventTypeFIND_NODE)
-		protocol.EventAddResponse(l.buffer, true)
-		protocol.EventAddPayload(l.buffer, fv)
+		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, v)
 	} else {
 		// we didn't find the key, so we find the K closest neighbours to the given target
 		nodes := l.routing.closestN(f.KeyBytes(), K)
-
-		// construct the node vector
-		ns := make([]flatbuffers.UOffsetT, len(nodes))
-
-		for i, n := range nodes {
-			nid := l.buffer.CreateByteVector(n.id)
-			nad := l.buffer.CreateByteVector([]byte(n.address.String()))
-
-			protocol.NodeStart(l.buffer)
-			protocol.NodeAddId(l.buffer, nid)
-			protocol.NodeAddAddress(l.buffer, nad)
-			ns[i] = protocol.NodeEnd(l.buffer)
-		}
-
-		protocol.FindValueStartNodesVector(l.buffer, len(nodes))
-
-		// prepend nodes to vector in reverse order
-		for i := len(nodes) - 1; i >= 0; i-- {
-			l.buffer.PrependUOffsetT(ns[i])
-		}
-
-		nv := l.buffer.EndVector(len(nodes))
-
-		// construct the find node table
-		protocol.FindValueStart(l.buffer)
-		protocol.FindValueAddNodes(l.buffer, nv)
-		fv := protocol.FindValueEnd(l.buffer)
-
-		// construct the response event table
-		eid := l.buffer.CreateByteVector(event.IdBytes())
-		snd := l.buffer.CreateByteVector(l.localID)
-
-		protocol.EventStart(l.buffer)
-		protocol.EventAddId(l.buffer, eid)
-		protocol.EventAddSender(l.buffer, snd)
-		protocol.EventAddEvent(l.buffer, protocol.EventTypeFIND_NODE)
-		protocol.EventAddResponse(l.buffer, true)
-		protocol.EventAddPayload(l.buffer, fv)
+		resp = eventFindValueNotFoundResponse(l.buffer, event.IdBytes(), l.localID, nodes)
 	}
 
-	e := protocol.EventEnd(l.buffer)
-	l.buffer.Finish(e)
-
-	_, err := l.conn.WriteToUDP(l.buffer.FinishedBytes(), addr)
+	_, err := l.conn.WriteToUDP(resp, addr)
 
 	return err
 }

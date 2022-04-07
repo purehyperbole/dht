@@ -95,7 +95,7 @@ func (d *DHT) listen() error {
 			return err
 		}
 
-		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.routing, d.cache, d.storage, d.config.Timeout))
+		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.config.Timeout))
 	}
 
 	return nil
@@ -123,41 +123,15 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		// TODO : if the closest node is the local node, we should probably shortcut the network request
 		// and immediately get from the store
 
-		// generate a new random request ID
+		// generate a new random request ID and event
 		rid := randomID()
-
-		buf.Reset()
-
-		// create the store table
-		k := buf.CreateByteVector(key)
-		v := buf.CreateByteVector(value)
-
-		protocol.StoreStart(buf)
-		protocol.StoreAddKey(buf, k)
-		protocol.StoreAddValue(buf, v)
-		protocol.StoreAddTtl(buf, time.Now().Add(ttl).Unix())
-		s := protocol.StoreEnd(buf)
-
-		// build the event to send
-		eid := buf.CreateByteVector(rid)
-		snd := buf.CreateByteVector(d.config.LocalID)
-
-		protocol.EventStart(buf)
-		protocol.EventAddId(buf, eid)
-		protocol.EventAddSender(buf, snd)
-		protocol.EventAddEvent(buf, protocol.EventTypeSTORE)
-		protocol.EventAddResponse(buf, false)
-		protocol.EventAddPayload(buf, s)
-
-		e := protocol.EventEnd(buf)
-
-		buf.Finish(e)
+		req := eventStoreRequest(buf, rid, d.config.LocalID, key, value)
 
 		// select the next listener to send our request
 		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 			n.address,
 			rid,
-			buf.FinishedBytes(),
+			req,
 			func(event *protocol.Event, err error) {
 				// TODO : we call the user provided callback as soon as there's an error
 				// ideally, we should consider the store a success if a minimum number of
@@ -188,6 +162,10 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// a correct implementation should send mutiple requests concurrently,
 	// but here we're only send a request to the closest node
 	n := d.routing.closest(key)
+	if n == nil {
+		callback(nil, errors.New("no nodes found!"))
+		return
+	}
 
 	// get a spare buffer to generate our requests with
 	buf := d.pool.Get().(*flatbuffers.Builder)
@@ -196,42 +174,19 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// TODO : if the closest node is the local node, we should probably shortcut the network request
 	// and immediately get from the store
 
-	// generate a new random request ID
-	rid := randomID()
-
-	buf.Reset()
-
-	// create the find value table
-	k := buf.CreateByteVector(key)
-
-	protocol.FindValueStart(buf)
-	protocol.FindValueAddKey(buf, k)
-	fv := protocol.FindValueEnd(buf)
-
-	// build the event to send
-	eid := buf.CreateByteVector(rid)
-	snd := buf.CreateByteVector(d.config.LocalID)
-
-	protocol.EventStart(buf)
-	protocol.EventAddId(buf, eid)
-	protocol.EventAddSender(buf, snd)
-	protocol.EventAddEvent(buf, protocol.EventTypeFIND_VALUE)
-	protocol.EventAddResponse(buf, false)
-	protocol.EventAddPayload(buf, fv)
-
-	e := protocol.EventEnd(buf)
-
-	buf.Finish(e)
-
 	// track the number of recursive lookups we've made
 	var r int
+
+	// generate a new random request ID
+	rid := randomID()
+	req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 	// select the next listener to send our request
 	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 		n.address,
 		rid,
-		buf.FinishedBytes(),
-		d.findCallback(key, callback, r+1),
+		req,
+		d.findValueCallback(key, callback, r+1),
 	)
 
 	if err != nil {
@@ -243,7 +198,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
-func (d *DHT) findCallback(key []byte, callback func(value []byte, err error), requests int) func(event *protocol.Event, err error) {
+func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err error), requests int) func(event *protocol.Event, err error) {
 	return func(event *protocol.Event, err error) {
 		// TODO : we call the user provided callback as soon as there's an error
 		// ideally, we should consider the store a success if a minimum number of
@@ -251,13 +206,6 @@ func (d *DHT) findCallback(key []byte, callback func(value []byte, err error), r
 		if err != nil {
 			// TODO : if this is a timeout, we should try the next closest node
 			callback(nil, err)
-			return
-		}
-
-		// TODO : this should be k, but that's an excessive amount of requests to make
-		// so we half that value
-		if requests >= K/2 {
-			callback(nil, errors.New("value not found"))
 			return
 		}
 
@@ -270,14 +218,6 @@ func (d *DHT) findCallback(key []byte, callback func(value []byte, err error), r
 
 		f := new(protocol.FindValue)
 		f.Init(payloadTable.Bytes, payloadTable.Pos)
-
-		// get the first returned node so we can query it next
-		nd := new(protocol.Node)
-
-		if !f.Nodes(nd, 0) {
-			callback(nil, errors.New("bad find value node data"))
-			return
-		}
 
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
@@ -293,6 +233,21 @@ func (d *DHT) findCallback(key []byte, callback func(value []byte, err error), r
 			return
 		}
 
+		// TODO : this should be k, but that's an excessive amount of requests to make
+		// so we half that value
+		if requests >= K/2 {
+			callback(nil, errors.New("value not found"))
+			return
+		}
+
+		// get the first returned node so we can query it next
+		nd := new(protocol.Node)
+
+		if !f.Nodes(nd, 0) {
+			callback(nil, errors.New("bad find value node data"))
+			return
+		}
+
 		address, err := net.ResolveUDPAddr("udp", string(nd.AddressBytes()))
 		if err != nil {
 			callback(nil, errors.New("find value response contains a node with an invalid udp address"))
@@ -304,43 +259,20 @@ func (d *DHT) findCallback(key []byte, callback func(value []byte, err error), r
 		buf := d.pool.Get().(*flatbuffers.Builder)
 		defer d.pool.Put(buf)
 
-		// generate a new random request ID
-		rid := randomID()
-
-		buf.Reset()
-
-		// create the find value table
-		k := buf.CreateByteVector(key)
-
-		protocol.FindValueStart(buf)
-		protocol.FindValueAddKey(buf, k)
-		fv := protocol.FindValueEnd(buf)
-
-		// build the event to send
-		eid := buf.CreateByteVector(rid)
-		snd := buf.CreateByteVector(d.config.LocalID)
-
-		protocol.EventStart(buf)
-		protocol.EventAddId(buf, eid)
-		protocol.EventAddSender(buf, snd)
-		protocol.EventAddEvent(buf, protocol.EventTypeFIND_VALUE)
-		protocol.EventAddResponse(buf, false)
-		protocol.EventAddPayload(buf, fv)
-
-		e := protocol.EventEnd(buf)
-
-		buf.Finish(e)
-
 		// TODO : we should also track if we're sending to the same node more than once!
 		// track the number of recursive lookups we've made
 		var r int
+
+		// generate a new random request ID
+		rid := randomID()
+		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 		// select the next listener to send our request
 		err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 			address,
 			rid,
-			buf.FinishedBytes(),
-			d.findCallback(key, callback, r+1),
+			req,
+			d.findValueCallback(key, callback, r+1),
 		)
 
 		if err != nil {

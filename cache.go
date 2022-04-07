@@ -36,15 +36,6 @@ func newCache(refresh time.Duration) *cache {
 	return c
 }
 
-func (c *cache) get(key []byte) (func(*protocol.Event, error), bool) {
-	c.mu.Lock()
-	// TODO : try to avoid this unecessary allocation
-	r, ok := c.requests[string(key)]
-	c.mu.Unlock()
-
-	return r.callback, ok
-}
-
 func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error)) {
 	c.mu.Lock()
 	// TODO : try to avoid this unecessary allocation
@@ -60,18 +51,13 @@ func (c *cache) pop(key []byte) (func(*protocol.Event, error), bool) {
 	r, ok := c.requests[k]
 	if ok {
 		delete(c.requests, k)
+		c.mu.Unlock()
+		return r.callback, ok
 	}
 
 	c.mu.Unlock()
 
-	return r.callback, ok
-}
-
-func (c *cache) remove(key []byte) {
-	c.mu.Lock()
-	// TODO : try to avoid this unecessary allocation
-	delete(c.requests, string(key))
-	c.mu.Unlock()
+	return nil, false
 }
 
 func (c *cache) cleanup(refresh time.Duration) {
