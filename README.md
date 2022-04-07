@@ -1,4 +1,5 @@
-# DHT
+# DHT [![Go Reference](https://pkg.go.dev/badge/github.com/purehyperbole/dht.svg)](https://pkg.go.dev/github.com/purehyperbole/dht) [![Go Report Card](https://goreportcard.com/badge/github.com/purehyperbole/dht)](https://goreportcard.com/report/github.com/purehyperbole/dht) [![Build Status](https://travis-ci.org/purehyperbole/dht.svg?branch=master)](https://travis-ci.org/purehyperbole/dht)
+
 A Kademlia DHT implementation for Go with a focus on performance and ease of use. It is not seek to conform to any existing standards or implementations. 
 
  - Implements a 160 bit keyspace
@@ -55,7 +56,7 @@ From any node you can then store values as follows:
 func main() {
     ...
 
-    // helper function to construct a sha1 hash that 
+    // helper function to construct a sha1 hash that
     // will be used as the values key
     myKey := dht.Key("my-awesome-key")
     myValue := []byte("my-even-more-awesome-value")
@@ -74,7 +75,7 @@ Once your value is stored, you can retreive it from the network as follows:
 ```go
 func main() {
     ...
-    
+
     // finds the value. please note it is not safe to use the value outside
     // of the provided callback unless it is copied
     dht.Find(myKey, func(value []byte, err error) {
@@ -111,7 +112,7 @@ $ go test -v -bench=.
 - [x] store
 - [x] findNode
 - [x] findValue
-- [x] benchmarks 
+- [x] benchmarks
 - [ ] peer refresh
 - [ ] node join/leave
 
