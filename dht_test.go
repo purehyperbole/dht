@@ -84,7 +84,7 @@ func BenchmarkDHTStoreLocal(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	// test with multiple send requests
+	// test with multiple store requests in parallel
 	b.RunParallel(func(pb *testing.PB) {
 		ch := make(chan error, 1)
 
@@ -94,6 +94,59 @@ func BenchmarkDHTStoreLocal(b *testing.B) {
 			value := randomID()
 
 			dht.Store(key, value, time.Hour, func(err error) {
+				ch <- err
+			})
+
+			err = <-ch
+		}
+	})
+}
+
+func BenchmarkDHTFindLocal(b *testing.B) {
+	c := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+	}
+
+	// create a new dht with no nodes
+	dht, err := New(c)
+	require.Nil(b, err)
+	defer dht.Close()
+
+	// add itself to it's routing table
+	addr, err := net.ResolveUDPAddr("udp", c.ListenAddress)
+	require.Nil(b, err)
+
+	dht.routing.insert(&node{
+		id:      c.LocalID,
+		address: addr,
+	})
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// create a channel to handle our callback in a blocking way
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	ch := make(chan error, 1)
+
+	// attempt to store some data
+	key := randomID()
+	value := randomID()
+
+	dht.Store(key, value, time.Hour, func(err error) {
+		ch <- err
+	})
+
+	err = <-ch
+
+	// test with multiple find requests in parallel
+	b.RunParallel(func(pb *testing.PB) {
+		ch := make(chan error, 1)
+
+		for pb.Next() {
+			dht.Find(key, func(value []byte, err error) {
 				ch <- err
 			})
 

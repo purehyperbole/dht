@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -120,8 +121,18 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	defer d.pool.Put(buf)
 
 	for _, n := range ns {
-		// TODO : if the closest node is the local node, we should probably shortcut the network request
-		// and immediately get from the store
+		// shortcut the request if its to the local node
+		if bytes.Equal(n.id, d.config.LocalID) {
+			d.storage.set(key, value, time.Now().Add(ttl))
+
+			if len(ns) == 1 {
+				// we're the only node, so call the callback immediately
+				callback(nil)
+				return
+			}
+
+			continue
+		}
 
 		// generate a new random request ID and event
 		rid := randomID()
@@ -168,12 +179,21 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 		return
 	}
 
+	// TODO : we should check our own cache first before sending a request?
+	// shortcut the request if its to the local node
+	if bytes.Equal(n.id, d.config.LocalID) {
+		value, ok := d.storage.get(key)
+		if !ok {
+			callback(value, errors.New("key not found"))
+		} else {
+			callback(value, nil)
+		}
+		return
+	}
+
 	// get a spare buffer to generate our requests with
 	buf := d.pool.Get().(*flatbuffers.Builder)
 	defer d.pool.Put(buf)
-
-	// TODO : if the closest node is the local node, we should probably shortcut the network request
-	// and immediately get from the store
 
 	// track the number of recursive lookups we've made
 	var r int
