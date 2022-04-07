@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"crypto/rand"
 	"fmt"
 	"net"
 	"testing"
@@ -213,6 +214,55 @@ func BenchmarkDHTStoreCluster(b *testing.B) {
 
 		key := randomID()
 		value := randomID()
+
+		for pb.Next() {
+			// attempt to store some data
+			dhts[0].Store(key, value, time.Hour, func(err error) {
+				ch <- err
+			})
+
+			<-ch
+		}
+	})
+}
+
+func BenchmarkDHTStoreClusterLargeValue(b *testing.B) {
+	dhts := make([]*DHT, 100)
+
+	for i := 0; i < 100; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9000+i),
+			Listeners:     1,
+		}
+
+		if i > 0 {
+			c.BootstrapAddresses = []string{
+				dhts[0].config.ListenAddress,
+			}
+		}
+
+		// create a new dht with no nodes
+		dht, err := New(c)
+		require.Nil(b, err)
+		defer dht.Close()
+
+		dhts[i] = dht
+	}
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	// test with multiple store requests in parallel
+	b.RunParallel(func(pb *testing.PB) {
+		ch := make(chan error, 1)
+
+		key := randomID()
+		value := make([]byte, 2048)
+		rand.Read(value)
 
 		for pb.Next() {
 			// attempt to store some data
