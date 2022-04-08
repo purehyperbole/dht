@@ -373,10 +373,7 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 		ns := j.next(3)
 		if ns == nil {
 			if j.finish(false) {
-				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COMPLETED VALUE SEARCH")
 				callback(nil, errors.New("value not found"))
-			} else {
-				fmt.Println("NO MORE ROUTES LEFT")
 			}
 			return
 		}
@@ -494,7 +491,6 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 		if ns == nil {
 			// we've completed our search of nodes
 			if j.finish(false) {
-				fmt.Println("COMPLETED SEARCH")
 				callback(nil)
 			}
 			return

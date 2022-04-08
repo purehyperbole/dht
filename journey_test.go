@@ -1,6 +1,8 @@
 package dht
 
 import (
+	"fmt"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,8 +81,11 @@ func TestJourneyNextRoutes(t *testing.T) {
 	nodes := make([]*node, K)
 
 	for i := 0; i < K; i++ {
+		addr, _ := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.01:%d", 9000+i))
+
 		nodes[i] = &node{
-			id: randomID(),
+			id:      randomID(),
+			address: addr,
 		}
 	}
 

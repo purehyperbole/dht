@@ -59,7 +59,7 @@ func (l *listener) process() {
 			panic(err)
 		}
 
-		log.Println("received event from", addr.String())
+		// log.Println("received event from", addr.String())
 
 		var transferKeys bool
 
@@ -115,8 +115,6 @@ func (l *listener) process() {
 		// requests, potentially taking us out of other nodes routing tables.
 		// that may have a cascading effect...
 		if transferKeys {
-			var sent int
-			start := time.Now()
 			l.storage.Iterate(func(key, value []byte, ttl time.Duration) bool {
 				// TODO : keeping storage locked while we do socket io is not ideal
 				d1 := distance(l.localID, key)
@@ -139,14 +137,10 @@ func (l *listener) process() {
 						log.Println(err)
 						return false
 					}
-
-					sent++
 				}
 
 				return true
 			})
-
-			log.Println("sent", sent, "keys in", time.Since(start))
 		}
 	}
 }
@@ -235,7 +229,7 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 	// register the callback for this request
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
 
-	log.Println("sending event to", to.String())
+	// log.Println("sending event to", to.String())
 
 	_, err := l.conn.WriteToUDP(data, to)
 

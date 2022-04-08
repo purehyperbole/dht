@@ -3,8 +3,6 @@ package dht
 import (
 	"bytes"
 	"hash/maphash"
-	"log"
-	"net"
 	"sort"
 	"sync"
 )
@@ -17,7 +15,7 @@ type journey struct {
 	// the target we want to arrive at
 	destination []byte
 	// a set of nodes we have already visited
-	visited map[uint64]*net.UDPAddr
+	visited map[uint64]struct{}
 	// hasher for our list of destinations
 	hasher maphash.Hash
 	// potential routes that we can send requests to
@@ -42,7 +40,7 @@ func newJourney(source, destination []byte, iterations int) *journey {
 	return &journey{
 		source:      source,
 		destination: destination,
-		visited:     make(map[uint64]*net.UDPAddr),
+		visited:     make(map[uint64]struct{}),
 		hasher:      hasher,
 		nodes:       make([]*node, K),
 		distances:   make([]int, K),
@@ -57,29 +55,25 @@ func (j *journey) add(nodes []*node) {
 	j.mu.Lock()
 
 	for _, n := range nodes {
-		// don't add ourselves
+		// don't add node if it exists, or it's this node
 		if bytes.Equal(n.id, j.source) {
 			continue
 		}
-
-		// calculate the distance to the current node
-		d := distance(n.id, j.destination)
 
 		j.hasher.Reset()
 		j.hasher.Write(n.id)
 		k := j.hasher.Sum64()
 
+		// calculate the distance to the current node
+		d := distance(n.id, j.destination)
+
 		// if we have visited this node before, skip it
 		_, ok := j.visited[k]
 		if ok {
-			/*
-				fmt.Println("journey: skipping", n.address.String())
-				for _, v := range j.visited {
-					fmt.Println("  visited:", v.String())
-				}
-			*/
 			continue
 		}
+
+		j.visited[k] = struct{}{}
 
 		//fmt.Println("journey: adding", n.address.String())
 
@@ -95,10 +89,18 @@ func (j *journey) add(nodes []*node) {
 		// we find that is worse than us
 		for i := 0; i < K; i++ {
 			if j.distances[i] < d {
+				// remove this from our set of nodes
+				j.hasher.Reset()
+				j.hasher.Write(j.nodes[i].id)
+				k := j.hasher.Sum64()
+
+				delete(j.visited, k)
+
 				// there are less matching bits to the target
 				// so we can replace this completely
 				j.nodes[i] = n
 				j.distances[i] = d
+
 				break
 			}
 		}
@@ -143,16 +145,7 @@ func (j *journey) next(count int) []*node {
 	copy(j.distances, j.distances[available:])
 	j.routes = j.routes - available
 
-	// mark the nodes as visited
-	for i := range next {
-		j.hasher.Reset()
-		j.hasher.Write(next[i].id)
-		k := j.hasher.Sum64()
-
-		j.visited[k] = next[i].address
-	}
-
-	log.Println("sending nodes:", available, "inflight:", j.inflight, "iterations:", K-j.remaining, "routes:", j.routes)
+	// log.Println("sending nodes:", available, "inflight:", j.inflight, "iterations:", K-j.remaining, "routes:", j.routes)
 
 	return next
 }
@@ -184,17 +177,26 @@ func (j *journey) responseReceived() (bool, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	inf := j.inflight
+	// inf := j.inflight
 
 	if j.inflight > 0 {
 		j.inflight--
 	}
 
-	log.Println("response completed:", j.completed, "inflight (old):", inf, "inflight (new):", j.inflight, "routes:", j.routes)
+	// log.Println("response completed:", j.completed, "inflight (old):", inf, "inflight (new):", j.inflight, "routes:", j.routes)
 
 	// if we've exhausted all routes and we're still not completed,
 	// mark this journey as done for the next response we might receive
 	return j.completed, j.inflight < 1 && j.routes < 1
+}
+
+func (j *journey) has(n *node) bool {
+	for i := 0; i < j.routes; i++ {
+		if bytes.Equal(j.nodes[i].id, n.id) {
+			return true
+		}
+	}
+	return false
 }
 
 // Returns the length of the available routes

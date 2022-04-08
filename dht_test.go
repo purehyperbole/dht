@@ -236,6 +236,49 @@ func TestDHTClusterStoreFind(t *testing.T) {
 	assert.Equal(t, value, rv)
 }
 
+func TestDHTClusterStoreFindNonExistent(t *testing.T) {
+	bc := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+		Listeners:     1,
+	}
+
+	// create a new bootstrap node
+	bdht, err := New(bc)
+	require.Nil(t, err)
+	defer bdht.Close()
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// add some nodes to the network
+	for i := 0; i < 20; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
+			BootstrapAddresses: []string{
+				bc.ListenAddress,
+			},
+			Listeners: 1,
+		}
+
+		dht, err := New(c)
+		require.Nil(t, err)
+		defer dht.Close()
+	}
+
+	// create a channel to handle our callback in a blocking way
+	ch := make(chan error, 1)
+
+	key := randomID()
+
+	bdht.Find(key, func(v []byte, err error) {
+		ch <- err
+	})
+
+	require.NotNil(t, <-ch)
+}
+
 func TestDHTClusterNodeJoin(t *testing.T) {
 	bc := &Config{
 		LocalID:       randomID(),
@@ -345,9 +388,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		// to be replicated to the joining nodes
 		// TODO : improve this
 		for {
-			fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx received key")
 			if wait(transferred, time.Second*10) != nil {
-				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> STOPPING KEY THINGY")
 				wg.Done()
 				return
 			}
@@ -355,8 +396,6 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	}()
 
 	for i := 0; i < 20; i++ {
-		fmt.Println("STARTING", i+1)
-
 		// start 20 nodes
 		c := &Config{
 			LocalID:       randomID(),
@@ -401,14 +440,9 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 
 	var missing int
 
-	fmt.Println("finding keys")
-
 	// search for the original keys that were added to the network
 	for _, k := range keys {
 		dht.Find(k, func(v []byte, err error) {
-			if err != nil {
-				fmt.Println("found key!")
-			}
 			ch <- err
 		})
 
