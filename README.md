@@ -113,7 +113,7 @@ $ go test -v -bench=.
 - [x] findValue
 - [x] benchmarks
 - [x] node join/leave
-- [ ] user defined storage
+- [x] user defined storage
 - [ ] peer refresh
 - [ ] key refresh
 - [ ] latency based route selection

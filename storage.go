@@ -29,6 +29,8 @@ type storage struct {
 }
 
 func newInMemoryStorage() *storage {
+	// TODO : this will probably cause collisions
+	// that need to be handled!
 	var hasher maphash.Hash
 
 	seed := maphash.MakeSeed()
