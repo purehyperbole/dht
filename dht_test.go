@@ -3,7 +3,9 @@ package dht
 import (
 	"crypto/rand"
 	"fmt"
+	"hash/maphash"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +13,99 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var (
+	testHasher maphash.Hash
+)
+
+func init() {
+	testHasher.SetSeed(maphash.MakeSeed())
+}
+
+func testHash(k []byte) uint64 {
+	testHasher.Reset()
+	testHasher.Write(k)
+	return testHasher.Sum64()
+}
+
+type testStorage struct {
+	store       map[uint64]*value
+	hasher      maphash.Hash
+	mu          sync.Mutex
+	setCallback func(key, value []byte, ttl time.Duration)
+}
+
+func newTestStorage(scb func(key, value []byte, ttl time.Duration)) *testStorage {
+	var hasher maphash.Hash
+	hasher.SetSeed(maphash.MakeSeed())
+
+	return &testStorage{
+		store:       make(map[uint64]*value),
+		hasher:      hasher,
+		setCallback: scb,
+	}
+}
+
+// Get gets a key by its id
+func (s *testStorage) Get(k []byte) ([]byte, bool) {
+	s.mu.Lock()
+
+	s.hasher.Reset()
+	s.hasher.Write(k)
+
+	v, ok := s.store[s.hasher.Sum64()]
+
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, false
+	}
+
+	return v.data, ok
+}
+
+// Set sets a key value pair for a given ttl
+func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
+	kc := make([]byte, len(k))
+	copy(kc, k)
+
+	vc := make([]byte, len(v))
+	copy(vc, v)
+
+	s.mu.Lock()
+
+	s.hasher.Reset()
+	s.hasher.Write(k)
+
+	s.store[s.hasher.Sum64()] = &value{
+		key:     kc,
+		data:    vc,
+		ttl:     ttl,
+		expires: time.Now().Add(ttl),
+	}
+
+	if s.setCallback != nil {
+		s.setCallback(k, v, ttl)
+	}
+
+	s.mu.Unlock()
+
+	return true
+}
+
+// Iterate iterates over keys in the storage
+func (s *testStorage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
+	s.mu.Lock()
+
+	for _, v := range s.store {
+		if !cb(v.key, v.data, v.ttl) {
+			s.mu.Unlock()
+			return
+		}
+	}
+
+	s.mu.Unlock()
+}
 
 func TestDHTBoostrap(t *testing.T) {
 	bc := &Config{
@@ -144,8 +239,6 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 	}
 
 	// create a new bootstrap node
-	fmt.Println("starting bootstrap node")
-
 	bdht, err := New(bc)
 	require.Nil(t, err)
 	defer bdht.Close()
@@ -153,7 +246,8 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 	ch := make(chan error, 1)
 	keys := make([][]byte, 1000)
 
-	var transferrable [][]byte
+	transferred := make(chan []byte, 1000)
+	transferrable := make(map[uint64]struct{})
 
 	// create config for a new node, but don't join yet
 	c := &Config{
@@ -163,6 +257,9 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 			bc.ListenAddress,
 		},
 		Listeners: 1,
+		Storage: newTestStorage(func(k, v []byte, t time.Duration) {
+			transferred <- k
+		}),
 	}
 
 	// store some keys to the bootstrap node
@@ -181,7 +278,7 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 		d2 := distance(c.LocalID, k)
 
 		if d2 > d1 {
-			transferrable = append(transferrable, k)
+			transferrable[testHash(k)] = struct{}{}
 		}
 	}
 
@@ -193,10 +290,15 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 	require.Nil(t, err)
 	defer dht.Close()
 
-	time.Sleep(time.Second)
-
-	// TODO : finish test when we have a configurable storage backend that
-	// we can listen to store events on
+	for i := 0; i < len(transferrable); i++ {
+		select {
+		case k := <-transferred:
+			_, ok := transferrable[testHash(k)]
+			assert.True(t, ok)
+		case <-time.After(time.Second * 5):
+			require.Fail(t, "timed out")
+		}
+	}
 }
 
 func BenchmarkDHTLocalStore(b *testing.B) {

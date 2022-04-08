@@ -12,14 +12,14 @@ import (
 
 // a udp socket listener that processes incoming and outgoing packets
 type listener struct {
+	// storage for all values
+	storage Storage
 	// udp listener
 	conn *net.UDPConn
 	// routing table
 	routing *routingTable
 	// request cache
 	cache *cache
-	// storage for all values
-	storage *storage
 	// the amount of time before a request expires and times out
 	timeout time.Duration
 	// flatbuffers buffer
@@ -28,7 +28,7 @@ type listener struct {
 	localID []byte
 }
 
-func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage *storage, timeout time.Duration) *listener {
+func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage Storage, timeout time.Duration) *listener {
 	l := &listener{
 		conn:    conn,
 		routing: routing,
@@ -114,7 +114,7 @@ func (l *listener) process() {
 		// that may have a cascading effect...
 		if transferKeys {
 
-			l.storage.iterate(func(key, value []byte, ttl time.Duration) bool {
+			l.storage.Iterate(func(key, value []byte, ttl time.Duration) bool {
 				// TODO : keeping storage locked while we do socket io is not ideal
 				d1 := distance(l.localID, key)
 				d2 := distance(e.SenderBytes(), key)
@@ -164,7 +164,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	s := new(protocol.Store)
 	s.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	l.storage.set(s.KeyBytes(), s.ValueBytes(), time.Duration(s.Ttl()))
+	l.storage.Set(s.KeyBytes(), s.ValueBytes(), time.Duration(s.Ttl()))
 
 	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID, s.KeyBytes())
 
@@ -204,7 +204,7 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindValue)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	v, ok := l.storage.get(f.KeyBytes())
+	v, ok := l.storage.Get(f.KeyBytes())
 
 	var resp []byte
 

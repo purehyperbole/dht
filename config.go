@@ -14,4 +14,6 @@ type Config struct {
 	Listeners int
 	// Timeout the amount of time before a peer is declared unresponsive and removed
 	Timeout time.Duration
+	// Storage implementation to use for storing key value pairs
+	Storage Storage
 }

@@ -24,12 +24,12 @@ import (
 type DHT struct {
 	// config used for the dht
 	config *Config
+	// storage for values that saved to this node
+	storage Storage
 	// routing table that stores routing information about the network
 	routing *routingTable
 	// cache that tracks requests sent to other nodes
 	cache *cache
-	// storage for values that saved to this node
-	storage *storage
 	// udp listeners that are handling requests to/from other nodes
 	listeners []*listener
 	// pool of flatbuffer builder bufs to use when sending requests
@@ -54,6 +54,10 @@ func New(cfg *Config) (*DHT, error) {
 		cfg.Listeners = runtime.GOMAXPROCS(0)
 	}
 
+	if cfg.Storage == nil {
+		cfg.Storage = newInMemoryStorage()
+	}
+
 	addr, err := net.ResolveUDPAddr("udp", cfg.ListenAddress)
 	if err != nil {
 		return nil, err
@@ -68,7 +72,7 @@ func New(cfg *Config) (*DHT, error) {
 		config:  cfg,
 		routing: newRoutingTable(n),
 		cache:   newCache(cfg.Timeout),
-		storage: newStorage(),
+		storage: cfg.Storage,
 		pool: sync.Pool{
 			New: func() any {
 				return flatbuffers.NewBuilder(1024)
@@ -166,7 +170,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	for _, n := range ns {
 		// shortcut the request if its to the local node
 		if bytes.Equal(n.id, d.config.LocalID) {
-			d.storage.set(key, value, ttl)
+			d.storage.Set(key, value, ttl)
 
 			if len(ns) == 1 {
 				// we're the only node, so call the callback immediately
@@ -230,7 +234,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// TODO : we should check our own cache first before sending a request?
 	// shortcut the request if its to the local node
 	if bytes.Equal(n.id, d.config.LocalID) {
-		value, ok := d.storage.get(key)
+		value, ok := d.storage.Get(key)
 		if !ok {
 			callback(value, errors.New("key not found"))
 		} else {

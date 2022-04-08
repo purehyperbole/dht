@@ -2,6 +2,7 @@ package dht
 
 import (
 	"errors"
+	"hash/maphash"
 	"sync"
 	"time"
 
@@ -22,13 +23,23 @@ type request struct {
 // cache tracks asynchronous event requests
 type cache struct {
 	// TODO: take another look at sync.Map, check if memory usage/GC has improved
-	requests map[string]*request
+	requests map[uint64]*request
+	hasher   maphash.Hash
+	seed     maphash.Seed
 	mu       sync.Mutex
 }
 
 func newCache(refresh time.Duration) *cache {
+	var hasher maphash.Hash
+
+	seed := maphash.MakeSeed()
+
+	hasher.SetSeed(seed)
+
 	c := &cache{
-		requests: make(map[string]*request),
+		requests: make(map[uint64]*request),
+		hasher:   hasher,
+		seed:     seed,
 	}
 
 	go c.cleanup(refresh)
@@ -37,16 +48,25 @@ func newCache(refresh time.Duration) *cache {
 }
 
 func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error)) {
+	r := &request{callback: cb, ttl: ttl}
+
 	c.mu.Lock()
-	// TODO : try to avoid this unecessary allocation
-	c.requests[string(key)] = &request{callback: cb, ttl: ttl}
+
+	c.hasher.Reset()
+	c.hasher.Write(key)
+
+	c.requests[c.hasher.Sum64()] = r
+
 	c.mu.Unlock()
 }
 
 func (c *cache) pop(key []byte) (func(*protocol.Event, error), bool) {
 	c.mu.Lock()
-	// TODO : try to avoid this unecessary allocation
-	k := string(key)
+
+	c.hasher.Reset()
+	c.hasher.Write(key)
+
+	k := c.hasher.Sum64()
 
 	r, ok := c.requests[k]
 	if ok {

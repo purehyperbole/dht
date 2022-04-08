@@ -1,11 +1,20 @@
 package dht
 
 import (
+	"hash/maphash"
 	"sync"
 	"time"
 )
 
+// Storage defines the storage interface used by the DLT
+type Storage interface {
+	Get(key []byte) ([]byte, bool)
+	Set(key, value []byte, ttl time.Duration) bool
+	Iterate(cb func(key, value []byte, ttl time.Duration) bool)
+}
+
 type value struct {
+	key     []byte
 	data    []byte
 	ttl     time.Duration
 	expires time.Time
@@ -13,13 +22,23 @@ type value struct {
 
 // implement simple storage for now storage
 type storage struct {
-	store map[string]*value
-	mu    sync.Mutex
+	store  map[uint64]*value
+	hasher maphash.Hash
+	seed   maphash.Seed
+	mu     sync.Mutex
 }
 
-func newStorage() *storage {
+func newInMemoryStorage() *storage {
+	var hasher maphash.Hash
+
+	seed := maphash.MakeSeed()
+
+	hasher.SetSeed(seed)
+
 	s := &storage{
-		store: make(map[string]*value),
+		store:  make(map[uint64]*value),
+		hasher: hasher,
+		seed:   seed,
 	}
 
 	go s.cleanup()
@@ -27,9 +46,13 @@ func newStorage() *storage {
 	return s
 }
 
-func (s *storage) get(k []byte) ([]byte, bool) {
+// Get gets a key by its id
+func (s *storage) Get(k []byte) ([]byte, bool) {
 	s.mu.Lock()
-	v, ok := s.store[string(k)]
+	s.hasher.Reset()
+	s.hasher.Write(k)
+
+	v, ok := s.store[s.hasher.Sum64()]
 	s.mu.Unlock()
 
 	if !ok {
@@ -39,34 +62,42 @@ func (s *storage) get(k []byte) ([]byte, bool) {
 	return v.data, ok
 }
 
-func (s *storage) set(k, v []byte, ttl time.Duration) {
-	s.mu.Lock()
-
-	// we keep a copy of the value as it's actually
+// Set sets a key value pair for a given ttl
+func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
+	// we keep a copy of the key and value as it's actually
 	// read from a buffer that's going to be reused
 	// so we need to store this as a copy to avoid
 	// it getting overwritten by other data
-	// we don't need to do this for the key
-	// as the string() call allocates a new underlying
-	// array and creates a copy for us
+
+	kc := make([]byte, len(k))
+	copy(kc, k)
 
 	vc := make([]byte, len(v))
 	copy(vc, v)
 
-	s.store[string(k)] = &value{
+	s.mu.Lock()
+
+	s.hasher.Reset()
+	s.hasher.Write(k)
+
+	s.store[s.hasher.Sum64()] = &value{
+		key:     kc,
 		data:    vc,
 		ttl:     ttl,
 		expires: time.Now().Add(ttl),
 	}
 
 	s.mu.Unlock()
+
+	return true
 }
 
-func (s *storage) iterate(cb func(k, v []byte, ttl time.Duration) bool) {
+// Iterate iterates over keys in the storage
+func (s *storage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
 	s.mu.Lock()
 
-	for k, v := range s.store {
-		if !cb([]byte(k), v.data, v.ttl) {
+	for _, v := range s.store {
+		if !cb(v.key, v.data, v.ttl) {
 			s.mu.Unlock()
 			return
 		}
