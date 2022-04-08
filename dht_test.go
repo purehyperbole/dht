@@ -345,8 +345,9 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		// to be replicated to the joining nodes
 		// TODO : improve this
 		for {
-			fmt.Println("received key")
-			if wait(transferred, time.Second*5) != nil {
+			fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx received key")
+			if wait(transferred, time.Second*10) != nil {
+				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> STOPPING KEY THINGY")
 				wg.Done()
 				return
 			}

@@ -328,17 +328,14 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
 		if f.ValueLength() > 0 {
-			// no value or closer node was found, so the key does not exist?
-			// TODO : check if this is the right thing to do. a new node may
-			// not yet have the key
-			if j.finish() {
+			if j.finish(true) {
 				callback(f.ValueBytes(), nil)
 			}
 			return
 		} else if f.NodesLength() < 1 {
 			// mark the journey as finished so no more
 			// requests will be made
-			if j.finish() {
+			if j.finish(false) {
 				callback(nil, errors.New("value not found"))
 			}
 			return
@@ -375,9 +372,11 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 
 		ns := j.next(3)
 		if ns == nil {
-			if j.finish() {
-				fmt.Println("COMPLETED VALUE SEARCH")
+			if j.finish(false) {
+				fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> COMPLETED VALUE SEARCH")
 				callback(nil, errors.New("value not found"))
+			} else {
+				fmt.Println("NO MORE ROUTES LEFT")
 			}
 			return
 		}
@@ -402,9 +401,10 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 
 			if err != nil {
 				// if we fail to write to the socket, send the error to the callback immediately
-				j.finish()
-				callback(nil, err)
-				return
+				if j.finish(false) {
+					callback(nil, err)
+					return
+				}
 			}
 		}
 	}
@@ -493,7 +493,7 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 		ns := j.next(3)
 		if ns == nil {
 			// we've completed our search of nodes
-			if j.finish() {
+			if j.finish(false) {
 				fmt.Println("COMPLETED SEARCH")
 				callback(nil)
 			}

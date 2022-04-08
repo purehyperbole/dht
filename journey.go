@@ -158,12 +158,18 @@ func (j *journey) next(count int) []*node {
 }
 
 // marks the journey as completed
-func (j *journey) finish() bool {
+func (j *journey) finish(force bool) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	if j.completed || j.inflight > 0 {
-		return false
+	if force {
+		if j.completed {
+			return false
+		}
+	} else {
+		if j.completed || j.inflight > 0 {
+			return false
+		}
 	}
 
 	j.completed = true
