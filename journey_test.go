@@ -10,7 +10,7 @@ func TestJourneyAddRoutes(t *testing.T) {
 	target := randomID()
 
 	// test that nodes get added
-	j := newJourney(target, 5)
+	j := newJourney(randomID(), target, 5)
 
 	nodes := []*node{
 		{id: randomID()},
@@ -33,7 +33,7 @@ func TestJourneyAddRoutes(t *testing.T) {
 
 	// test that we evict routes that are not
 	// closer than the new node we provide
-	j = newJourney(target, 5)
+	j = newJourney(randomID(), target, 5)
 
 	// insert the maximum amount of nodes
 	nodes = make([]*node, K)
@@ -71,7 +71,7 @@ func TestJourneyNextRoutes(t *testing.T) {
 	target := randomID()
 
 	// test that nodes are removed correctly
-	j := newJourney(target, 5)
+	j := newJourney(randomID(), target, 5)
 
 	assert.Nil(t, j.next(5))
 
@@ -94,7 +94,7 @@ func TestJourneyNextRoutes(t *testing.T) {
 	}
 
 	// test that maximum iteration limit
-	j = newJourney(target, 1)
+	j = newJourney(randomID(), target, 1)
 
 	// insert the maximum amount of nodes
 	nodes = make([]*node, K)
@@ -114,7 +114,7 @@ func TestJourneyNextRoutes(t *testing.T) {
 func BenchmarkJourneyAddRoutes(b *testing.B) {
 	target := randomID()
 
-	j := newJourney(target, 5)
+	j := newJourney(randomID(), target, 5)
 
 	nodes := make([][]*node, 10000)
 

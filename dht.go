@@ -236,14 +236,14 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 
 	// a correct implementation should send mutiple requests concurrently,
 	// but here we're only send a request to the closest node
-	ns := d.routing.closestN(key, 3)
+	ns := d.routing.closestN(key, K)
 	if len(ns) == 0 {
 		callback(nil, errors.New("no nodes found!"))
 		return
 	}
 
 	// K iterations to find the key we want
-	j := newJourney(key, K)
+	j := newJourney(d.config.LocalID, key, K)
 	j.add(ns)
 
 	// try lookup to best 3 nodes
@@ -327,17 +327,19 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
-		if f.NodesLength() < 1 {
-			if f.ValueLength() == 0 {
-				// no value or closer node was found, so the key does not exist?
-				// TODO : check if this is the right thing to do. a new node may
-				// not yet have the key
-				callback(nil, errors.New("value not found"))
-			} else {
-				// mark the journey as finished so no more
-				// requests will be made
-				j.finish()
+		if f.ValueLength() > 0 {
+			// no value or closer node was found, so the key does not exist?
+			// TODO : check if this is the right thing to do. a new node may
+			// not yet have the key
+			if j.finish() {
 				callback(f.ValueBytes(), nil)
+			}
+			return
+		} else if f.NodesLength() < 1 {
+			// mark the journey as finished so no more
+			// requests will be made
+			if j.finish() {
+				callback(nil, errors.New("value not found"))
 			}
 			return
 		}
@@ -373,7 +375,10 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 
 		ns := j.next(3)
 		if ns == nil {
-			callback(nil, errors.New("value not found"))
+			if j.finish() {
+				fmt.Println("COMPLETED VALUE SEARCH")
+				callback(nil, errors.New("value not found"))
+			}
 			return
 		}
 
@@ -408,7 +413,7 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
 	// create the journey here, but don't add the bootstrap
 	// node as we don't know it's id yet
-	j := newJourney(target, K)
+	j := newJourney(d.config.LocalID, target, K)
 
 	// get a spare buffer to generate our requests with
 	buf := d.pool.Get().(*flatbuffers.Builder)
@@ -488,8 +493,10 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 		ns := j.next(3)
 		if ns == nil {
 			// we've completed our search of nodes
-			fmt.Println("COMPLETED SEARCH")
-			callback(nil)
+			if j.finish() {
+				fmt.Println("COMPLETED SEARCH")
+				callback(nil)
+			}
 			return
 		}
 

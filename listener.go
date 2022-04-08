@@ -59,6 +59,8 @@ func (l *listener) process() {
 			panic(err)
 		}
 
+		log.Println("received event from", addr.String())
+
 		var transferKeys bool
 
 		// log.Println("received event from:", addr, "size:", rb)
@@ -232,6 +234,8 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(event *protocol.Event, err error)) error {
 	// register the callback for this request
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
+
+	log.Println("sending event to", to.String())
 
 	_, err := l.conn.WriteToUDP(data, to)
 

@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"bytes"
 	"hash/maphash"
 	"log"
 	"net"
@@ -11,6 +12,8 @@ import (
 // journey tracks the optimum K routes
 // that have not been visited before
 type journey struct {
+	// address to skip, as its this node
+	source []byte
 	// the target we want to arrive at
 	destination []byte
 	// a set of nodes we have already visited
@@ -32,11 +35,12 @@ type journey struct {
 	mu        sync.Mutex
 }
 
-func newJourney(destination []byte, iterations int) *journey {
+func newJourney(source, destination []byte, iterations int) *journey {
 	var hasher maphash.Hash
 	hasher.SetSeed(maphash.MakeSeed())
 
 	return &journey{
+		source:      source,
 		destination: destination,
 		visited:     make(map[uint64]*net.UDPAddr),
 		hasher:      hasher,
@@ -53,6 +57,11 @@ func (j *journey) add(nodes []*node) {
 	j.mu.Lock()
 
 	for _, n := range nodes {
+		// don't add ourselves
+		if bytes.Equal(n.id, j.source) {
+			continue
+		}
+
 		// calculate the distance to the current node
 		d := distance(n.id, j.destination)
 
@@ -149,11 +158,17 @@ func (j *journey) next(count int) []*node {
 }
 
 // marks the journey as completed
-func (j *journey) finish() {
+func (j *journey) finish() bool {
 	j.mu.Lock()
-	log.Println("completed!")
+	defer j.mu.Unlock()
+
+	if j.completed || j.inflight > 0 {
+		return false
+	}
+
 	j.completed = true
-	j.mu.Unlock()
+
+	return true
 }
 
 // responseReceived marks an inflight request as responded to.

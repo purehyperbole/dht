@@ -319,7 +319,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	defer bdht.Close()
 
 	ch := make(chan error, 1)
-	keys := make([][]byte, 0)
+	keys := make([][]byte, 100)
 
 	// store some keys to the bootstrap node
 	for i := 0; i < len(keys); i++ {
@@ -347,7 +347,6 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		for {
 			fmt.Println("received key")
 			if wait(transferred, time.Second*5) != nil {
-				fmt.Println("timeout")
 				wg.Done()
 				return
 			}
@@ -375,12 +374,8 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		dht, err := New(c)
 		require.Nil(t, err)
 		defer dht.Close()
-
-		// wait a short period of time for the node to join
-		time.Sleep(time.Second * 5)
 	}
 
-	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> waiting")
 	wg.Wait()
 
 	c := &Config{
