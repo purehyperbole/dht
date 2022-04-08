@@ -22,7 +22,8 @@ type value struct {
 
 // implement simple storage for now storage
 type storage struct {
-	store  map[uint64]*value
+	// store  map[uint64]*value
+	store  sync.Map
 	hasher maphash.Hash
 	seed   maphash.Seed
 	mu     sync.Mutex
@@ -38,7 +39,7 @@ func newInMemoryStorage() *storage {
 	hasher.SetSeed(seed)
 
 	s := &storage{
-		store:  make(map[uint64]*value),
+		store:  sync.Map{},
 		hasher: hasher,
 		seed:   seed,
 	}
@@ -51,17 +52,19 @@ func newInMemoryStorage() *storage {
 // Get gets a key by its id
 func (s *storage) Get(k []byte) ([]byte, bool) {
 	s.mu.Lock()
+
 	s.hasher.Reset()
 	s.hasher.Write(k)
+	key := s.hasher.Sum64()
 
-	v, ok := s.store[s.hasher.Sum64()]
 	s.mu.Unlock()
 
+	v, ok := s.store.Load(key)
 	if !ok {
 		return nil, false
 	}
 
-	return v.data, ok
+	return v.(*value).data, true
 }
 
 // Set sets a key value pair for a given ttl
@@ -81,31 +84,26 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 
 	s.hasher.Reset()
 	s.hasher.Write(k)
+	key := s.hasher.Sum64()
 
-	s.store[s.hasher.Sum64()] = &value{
+	s.mu.Unlock()
+
+	s.store.Store(key, &value{
 		key:     kc,
 		data:    vc,
 		ttl:     ttl,
 		expires: time.Now().Add(ttl),
-	}
-
-	s.mu.Unlock()
+	})
 
 	return true
 }
 
 // Iterate iterates over keys in the storage
 func (s *storage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
-	s.mu.Lock()
-
-	for _, v := range s.store {
-		if !cb(v.key, v.data, v.ttl) {
-			s.mu.Unlock()
-			return
-		}
-	}
-
-	s.mu.Unlock()
+	s.store.Range(func(ky any, vl any) bool {
+		val := vl.(*value)
+		return cb(val.key, val.data, val.ttl)
+	})
 }
 
 func (s *storage) cleanup() {
@@ -115,14 +113,12 @@ func (s *storage) cleanup() {
 
 		now := time.Now()
 
-		s.mu.Lock()
-
-		for k, v := range s.store {
-			if v.expires.After(now) {
-				delete(s.store, k)
+		s.store.Range(func(ky any, vl any) bool {
+			val := vl.(*value)
+			if val.expires.After(now) {
+				s.store.Delete(ky)
 			}
-		}
-
-		s.mu.Unlock()
+			return true
+		})
 	}
 }

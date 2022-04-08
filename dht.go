@@ -46,7 +46,7 @@ func New(cfg *Config) (*DHT, error) {
 		return nil, errors.New("node id length is incorrect")
 	}
 
-	if cfg.Timeout.Nanoseconds() == 0 {
+	if int(cfg.Timeout) == 0 {
 		cfg.Timeout = time.Minute
 	}
 
@@ -89,7 +89,8 @@ func New(cfg *Config) (*DHT, error) {
 	// add the local node to our own routing table
 	d.routing.insert(n.id, addr)
 
-	br := make(chan error, 3)
+	br := make(chan error, len(cfg.BootstrapAddresses))
+	bn := make([]*node, len(cfg.BootstrapAddresses))
 
 	for i := range cfg.BootstrapAddresses {
 		addr, err := net.ResolveUDPAddr("udp", cfg.BootstrapAddresses[i])
@@ -97,10 +98,13 @@ func New(cfg *Config) (*DHT, error) {
 			return nil, err
 		}
 
-		d.findNodes(&node{address: addr}, cfg.LocalID, func(err error) {
-			br <- err
-		})
+		bn[i] = &node{address: addr}
 	}
+
+	// TODO : this should be a recursive lookup, use journey
+	d.findNodes(bn, cfg.LocalID, func(err error) {
+		br <- err
+	})
 
 	var successes int
 
@@ -223,49 +227,59 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 		return
 	}
 
+	// we should check our own cache first before sending a request
+	v, ok := d.storage.Get(key)
+	if ok {
+		callback(v, nil)
+		return
+	}
+
 	// a correct implementation should send mutiple requests concurrently,
 	// but here we're only send a request to the closest node
-	n := d.routing.closest(key)
-	if n == nil {
+	ns := d.routing.closestN(key, 3)
+	if len(ns) == 0 {
 		callback(nil, errors.New("no nodes found!"))
 		return
 	}
 
-	// TODO : we should check our own cache first before sending a request?
-	// shortcut the request if its to the local node
-	if bytes.Equal(n.id, d.config.LocalID) {
-		value, ok := d.storage.Get(key)
-		if !ok {
-			callback(value, errors.New("key not found"))
-		} else {
-			callback(value, nil)
+	// K iterations to find the key we want
+	j := newJourney(key, K)
+	j.add(ns)
+
+	// try lookup to best 3 nodes
+	for _, n := range j.next(3) {
+		// shortcut the request if its to the local node
+		if bytes.Equal(n.id, d.config.LocalID) {
+			value, ok := d.storage.Get(key)
+			if !ok {
+				callback(value, errors.New("key not found"))
+			} else {
+				callback(value, nil)
+			}
+			return
 		}
-		return
-	}
 
-	// get a spare buffer to generate our requests with
-	buf := d.pool.Get().(*flatbuffers.Builder)
-	defer d.pool.Put(buf)
+		// get a spare buffer to generate our requests with
+		buf := d.pool.Get().(*flatbuffers.Builder)
+		defer d.pool.Put(buf)
 
-	// track the number of recursive lookups we've made
-	var r int
+		// generate a new random request ID
+		rid := randomID()
+		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
-	// generate a new random request ID
-	rid := randomID()
-	req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
+		// select the next listener to send our request
+		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+			n.address,
+			rid,
+			req,
+			d.findValueCallback(key, callback, j),
+		)
 
-	// select the next listener to send our request
-	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-		n.address,
-		rid,
-		req,
-		d.findValueCallback(key, callback, r+1),
-	)
-
-	if err != nil {
-		// if we fail to write to the socket, send the error to the callback immediately
-		callback(nil, err)
-		return
+		if err != nil {
+			// if we fail to write to the socket, send the error to the callback immediately
+			callback(nil, err)
+			return
+		}
 	}
 }
 
@@ -283,14 +297,21 @@ func (d *DHT) Close() error {
 
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
-func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err error), requests int) func(event *protocol.Event, err error) {
+func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
 	return func(event *protocol.Event, err error) {
-		// TODO : we call the user provided callback as soon as there's an error
-		// ideally, we should consider the store a success if a minimum number of
-		// nodes successfully managed to store the value
+		journeyCompleted, shouldError := j.responseReceived()
+
+		if journeyCompleted {
+			// ignore this response, we've already received what we've needed
+			return
+		}
+
+		// journey is completed, ignore this response
 		if err != nil {
-			// TODO : if this is a timeout, we should try the next closest node
-			callback(nil, err)
+			// if there's an actual error, send that to the user
+			if shouldError {
+				callback(nil, err)
+			}
 			return
 		}
 
@@ -313,29 +334,46 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 				// not yet have the key
 				callback(nil, errors.New("value not found"))
 			} else {
+				// mark the journey as finished so no more
+				// requests will be made
+				j.finish()
 				callback(f.ValueBytes(), nil)
 			}
 			return
 		}
 
-		// TODO : this should be k, but that's an excessive amount of requests to make
-		// so we half that value
-		if requests >= K/2 {
+		// collect the new nodes from the response
+		newNodes := make([]*node, f.NodesLength())
+
+		for i := 0; i < f.NodesLength(); i++ {
+			nd := new(protocol.Node)
+
+			if !f.Nodes(nd, i) {
+				callback(nil, errors.New("bad find value node data"))
+				return
+			}
+
+			address, err := net.ResolveUDPAddr("udp", string(nd.AddressBytes()))
+			if err != nil {
+				callback(nil, errors.New("find value response contains a node with an invalid udp address"))
+				return
+			}
+
+			id := make([]byte, KEY_BYTES)
+			copy(id, nd.IdBytes())
+
+			newNodes[i] = &node{
+				id:      id,
+				address: address,
+			}
+		}
+
+		// add them to the journey and then get the next recommended routes to query
+		j.add(newNodes)
+
+		ns := j.next(3)
+		if ns == nil {
 			callback(nil, errors.New("value not found"))
-			return
-		}
-
-		// get the first returned node so we can query it next
-		nd := new(protocol.Node)
-
-		if !f.Nodes(nd, 0) {
-			callback(nil, errors.New("bad find value node data"))
-			return
-		}
-
-		address, err := net.ResolveUDPAddr("udp", string(nd.AddressBytes()))
-		if err != nil {
-			callback(nil, errors.New("find value response contains a node with an invalid udp address"))
 			return
 		}
 
@@ -344,93 +382,146 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 		buf := d.pool.Get().(*flatbuffers.Builder)
 		defer d.pool.Put(buf)
 
-		// TODO : we should also track if we're sending to the same node more than once!
-		// track the number of recursive lookups we've made
-		var r int
+		for _, n := range ns {
+			// generate a new random request ID
+			rid := randomID()
+			req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
-		// generate a new random request ID
+			// select the next listener to send our request
+			err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+				n.address,
+				rid,
+				req,
+				d.findValueCallback(key, callback, j),
+			)
+
+			if err != nil {
+				// if we fail to write to the socket, send the error to the callback immediately
+				j.finish()
+				callback(nil, err)
+				return
+			}
+		}
+	}
+}
+
+func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
+	// create the journey here, but don't add the bootstrap
+	// node as we don't know it's id yet
+	j := newJourney(target, K)
+
+	// get a spare buffer to generate our requests with
+	buf := d.pool.Get().(*flatbuffers.Builder)
+	defer d.pool.Put(buf)
+
+	for _, n := range ns {
+		// generate a new random request ID and event
 		rid := randomID()
-		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
+		req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
 		// select the next listener to send our request
-		err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-			address,
+		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+			n.address,
 			rid,
 			req,
-			d.findValueCallback(key, callback, r+1),
+			d.findNodeCallback(target, callback, j),
 		)
 
 		if err != nil {
 			// if we fail to write to the socket, send the error to the callback immediately
-			callback(nil, err)
+			callback(err)
 			return
 		}
 	}
 }
 
-func (d *DHT) findNodes(n *node, target []byte, callback func(err error)) {
-	// get a spare buffer to generate our requests with
-	buf := d.pool.Get().(*flatbuffers.Builder)
-	defer d.pool.Put(buf)
+func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journey) func(*protocol.Event, error) {
+	return func(event *protocol.Event, err error) {
+		_, shouldError := j.responseReceived()
 
-	// generate a new random request ID and event
-	rid := randomID()
-	req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
+		// journey is completed, ignore this response
+		if err != nil {
+			// if there's an actual error, send that to the user
+			if shouldError {
+				callback(err)
+			}
+			return
+		}
 
-	// select the next listener to send our request
-	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-		n.address,
-		rid,
-		req,
-		func(event *protocol.Event, err error) {
+		payloadTable := new(flatbuffers.Table)
+
+		if !event.Payload(payloadTable) {
+			callback(errors.New("invalid response to find node request"))
+			return
+		}
+
+		f := new(protocol.FindNode)
+		f.Init(payloadTable.Bytes, payloadTable.Pos)
+
+		newNodes := make([]*node, f.NodesLength())
+
+		for i := 0; i < f.NodesLength(); i++ {
+			fn := new(protocol.Node)
+
+			if f.Nodes(fn, i) {
+				nad, err := net.ResolveUDPAddr("udp", string(fn.AddressBytes()))
+				if err != nil {
+					callback(fmt.Errorf("find node response includes an invalid node address: %w", err))
+					return
+				}
+
+				// create a copy of the node id
+				nid := make([]byte, fn.IdLength())
+				copy(nid, fn.IdBytes())
+
+				d.routing.insert(nid, nad)
+
+				newNodes[i] = &node{
+					id:      nid,
+					address: nad,
+				}
+			}
+		}
+
+		j.add(newNodes)
+
+		ns := j.next(3)
+		if ns == nil {
+			// we've completed our search of nodes
+			fmt.Println("COMPLETED SEARCH")
+			callback(nil)
+			return
+		}
+
+		buf := d.pool.Get().(*flatbuffers.Builder)
+		defer d.pool.Put(buf)
+
+		for _, n := range ns {
+			// generate a new random request ID and event
+			rid := randomID()
+			req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
+
+			// select the next listener to send our request
+			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
+				n.address,
+				rid,
+				req,
+				d.findNodeCallback(target, callback, j),
+			)
+
 			if err != nil {
+				// if we fail to write to the socket, send the error to the callback immediately
 				callback(err)
 				return
 			}
-
-			payloadTable := new(flatbuffers.Table)
-
-			if !event.Payload(payloadTable) {
-				callback(errors.New("invalid response to find node request"))
-				return
-			}
-
-			f := new(protocol.FindNode)
-			f.Init(payloadTable.Bytes, payloadTable.Pos)
-
-			for i := 0; i < f.NodesLength(); i++ {
-				fn := new(protocol.Node)
-
-				if f.Nodes(fn, i) {
-					nad, err := net.ResolveUDPAddr("udp", string(fn.AddressBytes()))
-					if err != nil {
-						callback(fmt.Errorf("find node response includes an invalid node address: %w", err))
-						return
-					}
-
-					// create a copy of the node id
-					nid := make([]byte, fn.IdLength())
-					copy(nid, fn.IdBytes())
-
-					d.routing.insert(nid, nad)
-				}
-			}
-
-			callback(nil)
-		},
-	)
-
-	if err != nil {
-		// if we fail to write to the socket, send the error to the callback immediately
-		callback(err)
-		return
+		}
 	}
 }
 
 // monitors peers on the network and sends them ping requests
 func (d *DHT) monitor() {
 	for {
-		time.Sleep(d.config.Timeout / 2)
+		time.Sleep(time.Hour / 2)
 
 		now := time.Now()
 
@@ -440,7 +531,7 @@ func (d *DHT) monitor() {
 			d.routing.buckets[i].iterate(func(n *node) {
 				// if we haven't seen this node in a while,
 				// add it to list of nodes to ping
-				if n.seen.Add(d.config.Timeout / 2).After(now) {
+				if n.seen.Add(time.Hour / 2).After(now) {
 					nodes = append(nodes, n)
 				}
 			})

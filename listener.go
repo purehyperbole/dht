@@ -113,7 +113,8 @@ func (l *listener) process() {
 		// requests, potentially taking us out of other nodes routing tables.
 		// that may have a cascading effect...
 		if transferKeys {
-
+			var sent int
+			start := time.Now()
 			l.storage.Iterate(func(key, value []byte, ttl time.Duration) bool {
 				// TODO : keeping storage locked while we do socket io is not ideal
 				d1 := distance(l.localID, key)
@@ -136,10 +137,14 @@ func (l *listener) process() {
 						log.Println(err)
 						return false
 					}
+
+					sent++
 				}
 
 				return true
 			})
+
+			log.Println("sent", sent, "keys in", time.Since(start))
 		}
 	}
 }

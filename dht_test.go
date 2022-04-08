@@ -2,6 +2,7 @@ package dht
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"net"
@@ -18,6 +19,15 @@ var (
 	testHasher maphash.Hash
 )
 
+func wait(ch chan interface{}, timeout time.Duration) error {
+	select {
+	case <-ch:
+		return nil
+	case <-time.After(time.Second * 2):
+		return errors.New("timeout")
+	}
+}
+
 func init() {
 	testHasher.SetSeed(maphash.MakeSeed())
 }
@@ -29,7 +39,7 @@ func testHash(k []byte) uint64 {
 }
 
 type testStorage struct {
-	store       map[uint64]*value
+	store       sync.Map
 	hasher      maphash.Hash
 	mu          sync.Mutex
 	setCallback func(key, value []byte, ttl time.Duration)
@@ -40,7 +50,7 @@ func newTestStorage(scb func(key, value []byte, ttl time.Duration)) *testStorage
 	hasher.SetSeed(maphash.MakeSeed())
 
 	return &testStorage{
-		store:       make(map[uint64]*value),
+		store:       sync.Map{},
 		hasher:      hasher,
 		setCallback: scb,
 	}
@@ -52,16 +62,16 @@ func (s *testStorage) Get(k []byte) ([]byte, bool) {
 
 	s.hasher.Reset()
 	s.hasher.Write(k)
-
-	v, ok := s.store[s.hasher.Sum64()]
+	key := s.hasher.Sum64()
 
 	s.mu.Unlock()
 
+	v, ok := s.store.Load(key)
 	if !ok {
 		return nil, false
 	}
 
-	return v.data, ok
+	return v.(*value).data, ok
 }
 
 // Set sets a key value pair for a given ttl
@@ -76,35 +86,30 @@ func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
 
 	s.hasher.Reset()
 	s.hasher.Write(k)
+	key := s.hasher.Sum64()
 
-	s.store[s.hasher.Sum64()] = &value{
+	s.mu.Unlock()
+
+	s.store.Store(key, &value{
 		key:     kc,
 		data:    vc,
 		ttl:     ttl,
 		expires: time.Now().Add(ttl),
-	}
+	})
 
 	if s.setCallback != nil {
 		s.setCallback(k, v, ttl)
 	}
-
-	s.mu.Unlock()
 
 	return true
 }
 
 // Iterate iterates over keys in the storage
 func (s *testStorage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
-	s.mu.Lock()
-
-	for _, v := range s.store {
-		if !cb(v.key, v.data, v.ttl) {
-			s.mu.Unlock()
-			return
-		}
-	}
-
-	s.mu.Unlock()
+	s.store.Range(func(ky any, vl any) bool {
+		val := vl.(*value)
+		return cb(val.key, val.data, val.ttl)
+	})
 }
 
 func TestDHTBoostrap(t *testing.T) {
@@ -299,6 +304,125 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 			require.Fail(t, "timed out")
 		}
 	}
+}
+
+func TestDHTClusterNodeJoinLeave(t *testing.T) {
+	bc := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+		Listeners:     2,
+	}
+
+	// create a new bootstrap node
+	bdht, err := New(bc)
+	require.Nil(t, err)
+	defer bdht.Close()
+
+	ch := make(chan error, 1)
+	keys := make([][]byte, 0)
+
+	// store some keys to the bootstrap node
+	for i := 0; i < len(keys); i++ {
+		k := randomID()
+
+		bdht.Store(k, k, time.Hour, func(err error) {
+			ch <- err
+		})
+
+		require.Nil(t, <-ch)
+
+		keys[i] = k
+	}
+
+	// make this channel big enough that it can never
+	// block if all keys are transferred to all nodes
+	transferred := make(chan interface{}, 20000)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		// wait some time for the nodes to start and for values
+		// to be replicated to the joining nodes
+		// TODO : improve this
+		for {
+			fmt.Println("received key")
+			if wait(transferred, time.Second*5) != nil {
+				fmt.Println("timeout")
+				wg.Done()
+				return
+			}
+		}
+	}()
+
+	for i := 0; i < 20; i++ {
+		fmt.Println("STARTING", i+1)
+
+		// start 20 nodes
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
+			BootstrapAddresses: []string{
+				bc.ListenAddress,
+			},
+			Listeners: 2,
+			Timeout:   time.Second * 2,
+			Storage: newTestStorage(func(k, v []byte, t time.Duration) {
+				transferred <- k
+			}),
+		}
+
+		// add a new node to the network
+		dht, err := New(c)
+		require.Nil(t, err)
+		defer dht.Close()
+
+		// wait a short period of time for the node to join
+		time.Sleep(time.Second * 5)
+	}
+
+	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> waiting")
+	wg.Wait()
+
+	c := &Config{
+		LocalID:       randomID(),
+		ListenAddress: fmt.Sprintf("127.0.0.1:10000"),
+		BootstrapAddresses: []string{
+			bc.ListenAddress,
+		},
+		Listeners: 2,
+		Timeout:   time.Second,
+	}
+
+	// add a new node to the network
+	dht, err := New(c)
+	require.Nil(t, err)
+	defer dht.Close()
+
+	time.Sleep(time.Second)
+
+	// stop the original bootstrap node
+	bdht.Close()
+
+	var missing int
+
+	fmt.Println("finding keys")
+
+	// search for the original keys that were added to the network
+	for _, k := range keys {
+		dht.Find(k, func(v []byte, err error) {
+			if err != nil {
+				fmt.Println("found key!")
+			}
+			ch <- err
+		})
+
+		// require.Nil(t, <-ch)
+		if <-ch != nil {
+			missing++
+		}
+	}
+
+	fmt.Println(missing)
 }
 
 func BenchmarkDHTLocalStore(b *testing.B) {
