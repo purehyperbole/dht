@@ -114,10 +114,10 @@ $ go test -v -bench=.
 - [x] benchmarks
 - [x] node join/leave
 - [x] user defined storage
+- [x] multiple values per store request
 - [ ] peer refresh
 - [ ] key refresh
 - [ ] latency based route selection
-- [ ] multiple values per store request
 
 ## Future Improvements
 - [ ] multiple values per key
