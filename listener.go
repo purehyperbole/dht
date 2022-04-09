@@ -116,15 +116,15 @@ func (l *listener) process() {
 		// requests, potentially taking us out of other nodes routing tables.
 		// that may have a cascading effect...
 		if transferKeys {
-			l.storage.Iterate(func(key, value []byte, ttl time.Duration) bool {
+			l.storage.Iterate(func(value *Value) bool {
 				// TODO : keeping storage locked while we do socket io is not ideal
-				d1 := distance(l.localID, key)
-				d2 := distance(e.SenderBytes(), key)
+				d1 := distance(l.localID, value.Key)
+				d2 := distance(e.SenderBytes(), value.Key)
 
 				if d2 > d1 {
 					// other node has more matching bits to the key, so we send it the value
 					rid := randomID()
-					req := eventStoreRequest(l.buffer, rid, l.localID, key, value, int64(ttl))
+					req := eventStoreRequest(l.buffer, rid, l.localID, value)
 
 					err = l.request(addr, rid, req, func(ev *protocol.Event, err error) {
 						if err != nil {
@@ -168,9 +168,14 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	s := new(protocol.Store)
 	s.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	l.storage.Set(s.KeyBytes(), s.ValueBytes(), time.Duration(s.Ttl()))
+	for i := 0; i < s.ValuesLength(); i++ {
+		v := new(protocol.Value)
+		if s.Values(v, i) {
+			l.storage.Set(v.KeyBytes(), v.ValueBytes(), time.Duration(v.Ttl()))
+		}
+	}
 
-	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID, s.KeyBytes())
+	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID)
 
 	_, err := l.conn.WriteToUDP(resp, addr)
 
@@ -216,7 +221,7 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
-		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, v)
+		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, v.Value)
 	} else {
 		// we didn't find the key, so we find the K closest neighbours to the given target
 		nodes := l.routing.closestN(f.KeyBytes(), K)

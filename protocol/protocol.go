@@ -8,34 +8,34 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
-type Any byte
+type Operation byte
 
 const (
-	AnyNONE      Any = 0
-	AnyFindNode  Any = 1
-	AnyFindValue Any = 2
-	AnyStore     Any = 3
+	OperationNONE      Operation = 0
+	OperationFindNode  Operation = 1
+	OperationFindValue Operation = 2
+	OperationStore     Operation = 3
 )
 
-var EnumNamesAny = map[Any]string{
-	AnyNONE:      "NONE",
-	AnyFindNode:  "FindNode",
-	AnyFindValue: "FindValue",
-	AnyStore:     "Store",
+var EnumNamesOperation = map[Operation]string{
+	OperationNONE:      "NONE",
+	OperationFindNode:  "FindNode",
+	OperationFindValue: "FindValue",
+	OperationStore:     "Store",
 }
 
-var EnumValuesAny = map[string]Any{
-	"NONE":      AnyNONE,
-	"FindNode":  AnyFindNode,
-	"FindValue": AnyFindValue,
-	"Store":     AnyStore,
+var EnumValuesOperation = map[string]Operation{
+	"NONE":      OperationNONE,
+	"FindNode":  OperationFindNode,
+	"FindValue": OperationFindValue,
+	"Store":     OperationStore,
 }
 
-func (v Any) String() string {
-	if s, ok := EnumNamesAny[v]; ok {
+func (v Operation) String() string {
+	if s, ok := EnumNamesOperation[v]; ok {
 		return s
 	}
-	return "Any(" + strconv.FormatInt(int64(v), 10) + ")"
+	return "Operation(" + strconv.FormatInt(int64(v), 10) + ")"
 }
 
 type EventType int8
@@ -175,6 +175,127 @@ func NodeStartAddressVector(builder *flatbuffers.Builder, numElems int) flatbuff
 	return builder.StartVector(1, numElems, 1)
 }
 func NodeEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	return builder.EndObject()
+}
+type Value struct {
+	_tab flatbuffers.Table
+}
+
+func GetRootAsValue(buf []byte, offset flatbuffers.UOffsetT) *Value {
+	n := flatbuffers.GetUOffsetT(buf[offset:])
+	x := &Value{}
+	x.Init(buf, n+offset)
+	return x
+}
+
+func (rcv *Value) Init(buf []byte, i flatbuffers.UOffsetT) {
+	rcv._tab.Bytes = buf
+	rcv._tab.Pos = i
+}
+
+func (rcv *Value) Table() flatbuffers.Table {
+	return rcv._tab
+}
+
+func (rcv *Value) Key(j int) byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
+	}
+	return 0
+}
+
+func (rcv *Value) KeyLength() int {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
+	if o != 0 {
+		return rcv._tab.VectorLen(o)
+	}
+	return 0
+}
+
+func (rcv *Value) KeyBytes() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *Value) MutateKey(j int, n byte) bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
+	}
+	return false
+}
+
+func (rcv *Value) Value(j int) byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
+	}
+	return 0
+}
+
+func (rcv *Value) ValueLength() int {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return rcv._tab.VectorLen(o)
+	}
+	return 0
+}
+
+func (rcv *Value) ValueBytes() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *Value) MutateValue(j int, n byte) bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
+	}
+	return false
+}
+
+func (rcv *Value) Ttl() int64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *Value) MutateTtl(n int64) bool {
+	return rcv._tab.MutateInt64Slot(8, n)
+}
+
+func ValueStart(builder *flatbuffers.Builder) {
+	builder.StartObject(3)
+}
+func ValueAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(key), 0)
+}
+func ValueStartKeyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(1, numElems, 1)
+}
+func ValueAddValue(builder *flatbuffers.Builder, value flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(value), 0)
+}
+func ValueStartValueVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(1, numElems, 1)
+}
+func ValueAddTtl(builder *flatbuffers.Builder, ttl int64) {
+	builder.PrependInt64Slot(2, ttl, 0)
+}
+func ValueEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
 }
 type FindNode struct {
@@ -421,103 +542,34 @@ func (rcv *Store) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *Store) Key(j int) byte {
+func (rcv *Store) Values(obj *Value, j int) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
+		x := rcv._tab.Vector(o)
+		x += flatbuffers.UOffsetT(j) * 4
+		x = rcv._tab.Indirect(x)
+		obj.Init(rcv._tab.Bytes, x)
+		return true
 	}
-	return 0
+	return false
 }
 
-func (rcv *Store) KeyLength() int {
+func (rcv *Store) ValuesLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
 	return 0
-}
-
-func (rcv *Store) KeyBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
-func (rcv *Store) MutateKey(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
-	}
-	return false
-}
-
-func (rcv *Store) Value(j int) byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
-	}
-	return 0
-}
-
-func (rcv *Store) ValueLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.VectorLen(o)
-	}
-	return 0
-}
-
-func (rcv *Store) ValueBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
-func (rcv *Store) MutateValue(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
-	}
-	return false
-}
-
-func (rcv *Store) Ttl() int64 {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
-	}
-	return 0
-}
-
-func (rcv *Store) MutateTtl(n int64) bool {
-	return rcv._tab.MutateInt64Slot(8, n)
 }
 
 func StoreStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(1)
 }
-func StoreAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(key), 0)
+func StoreAddValues(builder *flatbuffers.Builder, values flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(values), 0)
 }
-func StoreStartKeyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
-	return builder.StartVector(1, numElems, 1)
-}
-func StoreAddValue(builder *flatbuffers.Builder, value flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(value), 0)
-}
-func StoreStartValueVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
-	return builder.StartVector(1, numElems, 1)
-}
-func StoreAddTtl(builder *flatbuffers.Builder, ttl int64) {
-	builder.PrependInt64Slot(2, ttl, 0)
+func StoreStartValuesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(4, numElems, 4)
 }
 func StoreEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
@@ -634,15 +686,15 @@ func (rcv *Event) MutateResponse(n bool) bool {
 	return rcv._tab.MutateBoolSlot(10, n)
 }
 
-func (rcv *Event) PayloadType() Any {
+func (rcv *Event) PayloadType() Operation {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return Any(rcv._tab.GetByte(o + rcv._tab.Pos))
+		return Operation(rcv._tab.GetByte(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
-func (rcv *Event) MutatePayloadType(n Any) bool {
+func (rcv *Event) MutatePayloadType(n Operation) bool {
 	return rcv._tab.MutateByteSlot(12, byte(n))
 }
 
@@ -676,7 +728,7 @@ func EventAddEvent(builder *flatbuffers.Builder, event EventType) {
 func EventAddResponse(builder *flatbuffers.Builder, response bool) {
 	builder.PrependBoolSlot(3, response, false)
 }
-func EventAddPayloadType(builder *flatbuffers.Builder, payloadType Any) {
+func EventAddPayloadType(builder *flatbuffers.Builder, payloadType Operation) {
 	builder.PrependByteSlot(4, byte(payloadType), 0)
 }
 func EventAddPayload(builder *flatbuffers.Builder, payload flatbuffers.UOffsetT) {

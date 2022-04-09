@@ -155,6 +155,12 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		return
 	}
 
+	v := &Value{
+		Key:   key,
+		Value: value,
+		TTL:   ttl,
+	}
+
 	// get the k closest nodes to store the value to
 	ns := d.routing.closestN(key, K)
 
@@ -187,7 +193,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 
 		// generate a new random request ID and event
 		rid := randomID()
-		req := eventStoreRequest(buf, rid, d.config.LocalID, key, value, int64(ttl))
+		req := eventStoreRequest(buf, rid, d.config.LocalID, v)
 
 		// select the next listener to send our request
 		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
@@ -230,7 +236,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// we should check our own cache first before sending a request
 	v, ok := d.storage.Get(key)
 	if ok {
-		callback(v, nil)
+		callback(v.Value, nil)
 		return
 	}
 
@@ -248,17 +254,6 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 
 	// try lookup to best 3 nodes
 	for _, n := range j.next(3) {
-		// shortcut the request if its to the local node
-		if bytes.Equal(n.id, d.config.LocalID) {
-			value, ok := d.storage.Get(key)
-			if !ok {
-				callback(value, errors.New("key not found"))
-			} else {
-				callback(value, nil)
-			}
-			return
-		}
-
 		// get a spare buffer to generate our requests with
 		buf := d.pool.Get().(*flatbuffers.Builder)
 		defer d.pool.Put(buf)

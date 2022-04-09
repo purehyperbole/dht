@@ -5,6 +5,12 @@ table Node {
   address: [ubyte];
 }
 
+table Value {
+  key:   [ubyte];
+  value: [ubyte];
+  ttl:   long;
+}
+
 table FindNode {
   key:    [ubyte];
   nodes:  [Node];
@@ -17,12 +23,10 @@ table FindValue {
 }
 
 table Store {
-  key:    [ubyte];
-  value:  [ubyte];
-  ttl:    long;
+  values: [Value];
 }
 
-union Any { FindNode, FindValue, Store }
+union Operation { FindNode, FindValue, Store }
 
 enum EventType : byte {
     PING =       0,
@@ -37,7 +41,7 @@ table Event {
   sender:   [ubyte];
   event:    EventType;
   response: bool;
-  payload:  Any;
+  payload:  Operation;
 }
 
 root_type Event;

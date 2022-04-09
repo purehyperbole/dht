@@ -42,10 +42,10 @@ type testStorage struct {
 	store       sync.Map
 	hasher      maphash.Hash
 	mu          sync.Mutex
-	setCallback func(key, value []byte, ttl time.Duration)
+	setCallback func(value *Value)
 }
 
-func newTestStorage(scb func(key, value []byte, ttl time.Duration)) *testStorage {
+func newTestStorage(scb func(value *Value)) *testStorage {
 	var hasher maphash.Hash
 	hasher.SetSeed(maphash.MakeSeed())
 
@@ -57,7 +57,7 @@ func newTestStorage(scb func(key, value []byte, ttl time.Duration)) *testStorage
 }
 
 // Get gets a key by its id
-func (s *testStorage) Get(k []byte) ([]byte, bool) {
+func (s *testStorage) Get(k []byte) (*Value, bool) {
 	s.mu.Lock()
 
 	s.hasher.Reset()
@@ -71,7 +71,7 @@ func (s *testStorage) Get(k []byte) ([]byte, bool) {
 		return nil, false
 	}
 
-	return v.(*value).data, ok
+	return v.(*Value), ok
 }
 
 // Set sets a key value pair for a given ttl
@@ -90,25 +90,26 @@ func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
 
 	s.mu.Unlock()
 
-	s.store.Store(key, &value{
-		key:     kc,
-		data:    vc,
-		ttl:     ttl,
+	val := &Value{
+		Key:     kc,
+		Value:   vc,
+		TTL:     ttl,
 		expires: time.Now().Add(ttl),
-	})
+	}
+
+	s.store.Store(key, val)
 
 	if s.setCallback != nil {
-		s.setCallback(kc, vc, ttl)
+		s.setCallback(val)
 	}
 
 	return true
 }
 
 // Iterate iterates over keys in the storage
-func (s *testStorage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
+func (s *testStorage) Iterate(cb func(value *Value) bool) {
 	s.store.Range(func(ky any, vl any) bool {
-		val := vl.(*value)
-		return cb(val.key, val.data, val.ttl)
+		return cb(vl.(*Value))
 	})
 }
 
@@ -305,8 +306,8 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 			bc.ListenAddress,
 		},
 		Listeners: 1,
-		Storage: newTestStorage(func(k, v []byte, t time.Duration) {
-			transferred <- k
+		Storage: newTestStorage(func(v *Value) {
+			transferred <- v.Key
 		}),
 	}
 
@@ -405,8 +406,8 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 			},
 			Listeners: 2,
 			Timeout:   time.Second * 2,
-			Storage: newTestStorage(func(k, v []byte, t time.Duration) {
-				transferred <- k
+			Storage: newTestStorage(func(value *Value) {
+				transferred <- value.Key
 			}),
 		}
 

@@ -43,17 +43,29 @@ func eventPong(buf *flatbuffers.Builder, id, sender []byte) []byte {
 	return buf.FinishedBytes()
 }
 
-func eventStoreRequest(buf *flatbuffers.Builder, id, sender, key, value []byte, ttl int64) []byte {
+func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, value *Value) []byte {
 	buf.Reset()
 
-	k := buf.CreateByteVector(key)
-	v := buf.CreateByteVector(value)
+	// construct the value vector
+	ns := make([]flatbuffers.UOffsetT, 1)
+
+	k := buf.CreateByteVector(value.Key)
+	v := buf.CreateByteVector(value.Value)
+
+	protocol.ValueStart(buf)
+	protocol.ValueAddKey(buf, k)
+	protocol.ValueAddValue(buf, v)
+	protocol.ValueAddTtl(buf, int64(value.TTL))
+	ns[0] = protocol.ValueEnd(buf)
+
+	protocol.FindNodeStartNodesVector(buf, 1)
+	buf.PrependUOffsetT(ns[0])
+
+	vv := buf.EndVector(1)
 
 	// construct the find node table
 	protocol.StoreStart(buf)
-	protocol.StoreAddKey(buf, k)
-	protocol.StoreAddValue(buf, v)
-	protocol.StoreAddTtl(buf, ttl)
+	protocol.StoreAddValues(buf, vv)
 	s := protocol.StoreEnd(buf)
 
 	eid := buf.CreateByteVector(id)
@@ -73,15 +85,8 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender, key, value []byte, 
 	return buf.FinishedBytes()
 }
 
-func eventStoreResponse(buf *flatbuffers.Builder, id, sender, key []byte) []byte {
+func eventStoreResponse(buf *flatbuffers.Builder, id, sender []byte) []byte {
 	buf.Reset()
-
-	k := buf.CreateByteVector(key)
-
-	// construct the find node table
-	protocol.StoreStart(buf)
-	protocol.StoreAddKey(buf, k)
-	s := protocol.StoreEnd(buf)
 
 	eid := buf.CreateByteVector(id)
 	snd := buf.CreateByteVector(sender)
@@ -91,7 +96,6 @@ func eventStoreResponse(buf *flatbuffers.Builder, id, sender, key []byte) []byte
 	protocol.EventAddSender(buf, snd)
 	protocol.EventAddEvent(buf, protocol.EventTypeSTORE)
 	protocol.EventAddResponse(buf, true)
-	protocol.EventAddPayload(buf, s)
 
 	e := protocol.EventEnd(buf)
 

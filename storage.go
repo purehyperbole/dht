@@ -8,21 +8,22 @@ import (
 
 // Storage defines the storage interface used by the DLT
 type Storage interface {
-	Get(key []byte) ([]byte, bool)
+	Get(key []byte) (*Value, bool)
 	Set(key, value []byte, ttl time.Duration) bool
-	Iterate(cb func(key, value []byte, ttl time.Duration) bool)
+	Iterate(cb func(value *Value) bool)
 }
 
-type value struct {
-	key     []byte
-	data    []byte
-	ttl     time.Duration
+// Value represents the value to be stored
+type Value struct {
+	Key     []byte
+	Value   []byte
+	TTL     time.Duration
 	expires time.Time
 }
 
 // implement simple storage for now storage
 type storage struct {
-	// store  map[uint64]*value
+	// store  map[uint64]Value
 	store  sync.Map
 	hasher maphash.Hash
 	seed   maphash.Seed
@@ -50,7 +51,7 @@ func newInMemoryStorage() *storage {
 }
 
 // Get gets a key by its id
-func (s *storage) Get(k []byte) ([]byte, bool) {
+func (s *storage) Get(k []byte) (*Value, bool) {
 	s.mu.Lock()
 
 	s.hasher.Reset()
@@ -64,7 +65,7 @@ func (s *storage) Get(k []byte) ([]byte, bool) {
 		return nil, false
 	}
 
-	return v.(*value).data, true
+	return v.(*Value), true
 }
 
 // Set sets a key value pair for a given ttl
@@ -88,10 +89,10 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 
 	s.mu.Unlock()
 
-	s.store.Store(key, &value{
-		key:     kc,
-		data:    vc,
-		ttl:     ttl,
+	s.store.Store(key, &Value{
+		Key:     kc,
+		Value:   vc,
+		TTL:     ttl,
 		expires: time.Now().Add(ttl),
 	})
 
@@ -99,10 +100,9 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 }
 
 // Iterate iterates over keys in the storage
-func (s *storage) Iterate(cb func(k, v []byte, ttl time.Duration) bool) {
+func (s *storage) Iterate(cb func(v *Value) bool) {
 	s.store.Range(func(ky any, vl any) bool {
-		val := vl.(*value)
-		return cb(val.key, val.data, val.ttl)
+		return cb(vl.(*Value))
 	})
 }
 
@@ -114,7 +114,7 @@ func (s *storage) cleanup() {
 		now := time.Now()
 
 		s.store.Range(func(ky any, vl any) bool {
-			val := vl.(*value)
+			val := vl.(Value)
 			if val.expires.After(now) {
 				s.store.Delete(ky)
 			}
