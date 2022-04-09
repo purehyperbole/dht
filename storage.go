@@ -83,7 +83,7 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 	s.mu.Lock()
 
 	s.hasher.Reset()
-	s.hasher.Write(k)
+	s.hasher.Write(kc)
 	key := s.hasher.Sum64()
 
 	s.mu.Unlock()

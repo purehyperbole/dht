@@ -98,7 +98,7 @@ func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
 	})
 
 	if s.setCallback != nil {
-		s.setCallback(k, v, ttl)
+		s.setCallback(kc, vc, ttl)
 	}
 
 	return true
@@ -362,7 +362,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	defer bdht.Close()
 
 	ch := make(chan error, 1)
-	keys := make([][]byte, 100)
+	keys := make([][]byte, 5)
 
 	// store some keys to the bootstrap node
 	for i := 0; i < len(keys); i++ {
@@ -414,6 +414,8 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		dht, err := New(c)
 		require.Nil(t, err)
 		defer dht.Close()
+
+		time.Sleep(time.Millisecond * 200)
 	}
 
 	wg.Wait()
@@ -452,7 +454,9 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		}
 	}
 
-	fmt.Println(missing)
+	// we may loose some values,
+	// but if it's less than 1 percent of our
+	assert.Less(t, missing, 10)
 }
 
 func BenchmarkDHTLocalStore(b *testing.B) {
