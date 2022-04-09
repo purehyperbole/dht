@@ -117,6 +117,7 @@ $ go test -v -bench=.
 - [ ] peer refresh
 - [ ] key refresh
 - [ ] latency based route selection
+- [ ] multiple values per store request
 
 ## Future Improvements
 - [ ] multiple values per key

@@ -362,7 +362,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	defer bdht.Close()
 
 	ch := make(chan error, 1)
-	keys := make([][]byte, 5)
+	keys := make([][]byte, 100)
 
 	// store some keys to the bootstrap node
 	for i := 0; i < len(keys); i++ {
@@ -454,8 +454,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		}
 	}
 
-	// we may loose some values,
-	// but if it's less than 1 percent of our
+	// accept that we may loose up to 10% of our keys
 	assert.Less(t, missing, 10)
 }
 

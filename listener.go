@@ -2,7 +2,6 @@ package dht
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"time"
@@ -107,6 +106,7 @@ func (l *listener) process() {
 
 		if err != nil {
 			log.Println("failed to handle request: ", err.Error())
+			continue
 		}
 
 		// TODO : this is going to end up with the receiver being ddos'ed
@@ -116,8 +116,6 @@ func (l *listener) process() {
 		// requests, potentially taking us out of other nodes routing tables.
 		// that may have a cascading effect...
 		if transferKeys {
-			start := time.Now()
-			var sent int
 			l.storage.Iterate(func(key, value []byte, ttl time.Duration) bool {
 				// TODO : keeping storage locked while we do socket io is not ideal
 				d1 := distance(l.localID, key)
@@ -140,14 +138,12 @@ func (l *listener) process() {
 						log.Println(err)
 						return false
 					}
-
-					sent++
 				}
 
 				return true
 			})
 
-			fmt.Printf("transferred %d keys from %s to %s in %s\n", sent, l.conn.LocalAddr(), addr.String(), time.Since(start).String())
+			// fmt.Printf("transferred %d keys from %s to %s in %s\n", sent, l.conn.LocalAddr(), addr.String(), time.Since(start).String())
 		}
 	}
 }
