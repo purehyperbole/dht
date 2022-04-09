@@ -155,10 +155,12 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		return
 	}
 
-	v := &Value{
-		Key:   key,
-		Value: value,
-		TTL:   ttl,
+	v := []*Value{
+		{
+			Key:   key,
+			Value: value,
+			TTL:   ttl,
+		},
 	}
 
 	// get the k closest nodes to store the value to

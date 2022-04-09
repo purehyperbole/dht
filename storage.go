@@ -114,7 +114,7 @@ func (s *storage) cleanup() {
 		now := time.Now()
 
 		s.store.Range(func(ky any, vl any) bool {
-			val := vl.(Value)
+			val := vl.(*Value)
 			if val.expires.After(now) {
 				s.store.Delete(ky)
 			}

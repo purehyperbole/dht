@@ -10,6 +10,10 @@ import (
 	"github.com/purehyperbole/dht/protocol"
 )
 
+const (
+	MaxPayloadSize = 65024
+)
+
 // a udp socket listener that processes incoming and outgoing packets
 type listener struct {
 	// storage for all values
@@ -59,7 +63,7 @@ func (l *listener) process() {
 			panic(err)
 		}
 
-		// log.Println("received event from", addr.String())
+		log.Println("received event from", addr.String(), rb)
 
 		var transferKeys bool
 
@@ -116,34 +120,7 @@ func (l *listener) process() {
 		// requests, potentially taking us out of other nodes routing tables.
 		// that may have a cascading effect...
 		if transferKeys {
-			l.storage.Iterate(func(value *Value) bool {
-				// TODO : keeping storage locked while we do socket io is not ideal
-				d1 := distance(l.localID, value.Key)
-				d2 := distance(e.SenderBytes(), value.Key)
-
-				if d2 > d1 {
-					// other node has more matching bits to the key, so we send it the value
-					rid := randomID()
-					req := eventStoreRequest(l.buffer, rid, l.localID, value)
-
-					err = l.request(addr, rid, req, func(ev *protocol.Event, err error) {
-						if err != nil {
-							// just log this error for now, but it might be best to attempt to resend?
-							log.Println(err)
-						}
-					})
-
-					if err != nil {
-						// log error and stop sending
-						log.Println(err)
-						return false
-					}
-				}
-
-				return true
-			})
-
-			// fmt.Printf("transferred %d keys from %s to %s in %s\n", sent, l.conn.LocalAddr(), addr.String(), time.Since(start).String())
+			l.transferKeys(addr, e.SenderBytes())
 		}
 	}
 }
@@ -167,6 +144,10 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 
 	s := new(protocol.Store)
 	s.Init(payloadTable.Bytes, payloadTable.Pos)
+
+	if s.ValuesLength() > 1 {
+		log.Println("batch receiving", s.ValuesLength(), "from", addr.String(), "to", l.conn.LocalAddr())
+	}
 
 	for i := 0; i < s.ValuesLength(); i++ {
 		v := new(protocol.Value)
@@ -231,6 +212,79 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	_, err := l.conn.WriteToUDP(resp, addr)
 
 	return err
+}
+
+func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
+	l.buffer.Reset()
+
+	// we can fix a maximum of ~1055 values into a single udp packet, assuming empty values.
+	// calculated as: 65535 - 112 (event overhead) / 62 (value table with value length of 0)
+	values := make([]*Value, 0, 1100)
+	var size int // total size of the current values
+	start := time.Now()
+
+	l.storage.Iterate(func(value *Value) bool {
+		d1 := distance(l.localID, value.Key)
+		d2 := distance(id, value.Key)
+
+		if d2 > d1 {
+			// if we cant fit any more values in this event, send it
+			if size >= MaxPayloadSize {
+				rid := randomID()
+				req := eventStoreRequest(l.buffer, rid, l.localID, values)
+
+				log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
+
+				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+					if err != nil {
+						// just log this error for now, but it might be best to attempt to resend?
+						log.Println(err)
+					}
+				})
+
+				if err != nil {
+					// log error and stop sending
+					log.Println(err)
+					return false
+				}
+
+				// reset the values array and size
+				values = values[:0]
+				size = 0
+				start = time.Now()
+			}
+
+			// add the remaining value to the array
+			// for the next packet. 42 is the overhead
+			// of the data in the value table
+			values = append(values, value)
+			size = size + len(value.Key) + len(value.Value) + 42
+
+			return true
+		}
+
+		return true
+	})
+
+	// send any unfinished values
+	if len(values) > 0 {
+		rid := randomID()
+		req := eventStoreRequest(l.buffer, rid, l.localID, values)
+
+		log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
+
+		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+			if err != nil {
+				// just log this error for now, but it might be best to attempt to resend?
+				log.Println(err)
+			}
+		})
+
+		if err != nil {
+			// log error and stop sending
+			log.Println(err)
+		}
+	}
 }
 
 func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(event *protocol.Event, err error)) error {

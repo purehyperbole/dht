@@ -43,23 +43,29 @@ func eventPong(buf *flatbuffers.Builder, id, sender []byte) []byte {
 	return buf.FinishedBytes()
 }
 
-func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, value *Value) []byte {
+func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Value) []byte {
 	buf.Reset()
 
 	// construct the value vector
-	ns := make([]flatbuffers.UOffsetT, 1)
+	vs := make([]flatbuffers.UOffsetT, len(values))
 
-	k := buf.CreateByteVector(value.Key)
-	v := buf.CreateByteVector(value.Value)
+	for i, value := range values {
+		k := buf.CreateByteVector(value.Key)
+		v := buf.CreateByteVector(value.Value)
 
-	protocol.ValueStart(buf)
-	protocol.ValueAddKey(buf, k)
-	protocol.ValueAddValue(buf, v)
-	protocol.ValueAddTtl(buf, int64(value.TTL))
-	ns[0] = protocol.ValueEnd(buf)
+		protocol.ValueStart(buf)
+		protocol.ValueAddKey(buf, k)
+		protocol.ValueAddValue(buf, v)
+		protocol.ValueAddTtl(buf, int64(value.TTL))
+		vs[i] = protocol.ValueEnd(buf)
+	}
 
-	protocol.FindNodeStartNodesVector(buf, 1)
-	buf.PrependUOffsetT(ns[0])
+	protocol.FindNodeStartNodesVector(buf, len(values))
+
+	// prepend nodes to vector in reverse order
+	for i := len(values) - 1; i >= 0; i-- {
+		buf.PrependUOffsetT(vs[0])
+	}
 
 	vv := buf.EndVector(1)
 
