@@ -269,7 +269,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 			n.address,
 			rid,
 			req,
-			d.findValueCallback(key, callback, j),
+			d.findValueCallback(n.id, key, callback, j),
 		)
 
 		if err != nil {
@@ -294,8 +294,14 @@ func (d *DHT) Close() error {
 
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
-func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
+func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
 	return func(event *protocol.Event, err error) {
+		if err != nil {
+			if errors.Is(err, ErrRequestTimeout) {
+				d.routing.remove(id)
+			}
+		}
+
 		journeyCompleted, shouldError := j.responseReceived()
 
 		if journeyCompleted {
@@ -390,7 +396,7 @@ func (d *DHT) findValueCallback(key []byte, callback func(value []byte, err erro
 				n.address,
 				rid,
 				req,
-				d.findValueCallback(key, callback, j),
+				d.findValueCallback(n.id, key, callback, j),
 			)
 
 			if err != nil {
@@ -550,7 +556,11 @@ func (d *DHT) monitor() {
 				req,
 				func(event *protocol.Event, err error) {
 					if err != nil {
-						d.routing.remove(n.id)
+						if errors.Is(err, ErrRequestTimeout) {
+							d.routing.remove(n.id)
+						} else {
+							log.Println(err)
+						}
 					} else {
 						d.routing.seen(n.id)
 					}

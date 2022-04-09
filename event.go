@@ -67,7 +67,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Va
 		buf.PrependUOffsetT(vs[0])
 	}
 
-	vv := buf.EndVector(1)
+	vv := buf.EndVector(len(values))
 
 	// construct the find node table
 	protocol.StoreStart(buf)

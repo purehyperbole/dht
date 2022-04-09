@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	// MaxPayloadSize the maximum udp packet size
+	// setting this above MTU will cause fragmentation
+	// on networks that don't support it
 	MaxPayloadSize = 65024
 )
 
@@ -52,6 +55,20 @@ func (l *listener) process() {
 	// buffer maximum udp payload
 	b := make([]byte, 65527)
 
+	// TODO : implement a packet reassembler
+	// setup the size of our read and write buffers
+	// this will not be good on networks that have a
+	// smaller frame size than 64kb
+	err := l.conn.SetReadBuffer(1<<16 - 1)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = l.conn.SetWriteBuffer(1<<16 - 1)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	for {
 		rb, addr, err := l.conn.ReadFromUDP(b)
 		if err != nil {
@@ -62,8 +79,6 @@ func (l *listener) process() {
 			}
 			panic(err)
 		}
-
-		log.Println("received event from", addr.String(), rb)
 
 		var transferKeys bool
 
@@ -129,9 +144,7 @@ func (l *listener) process() {
 func (l *listener) pong(event *protocol.Event, addr *net.UDPAddr) error {
 	resp := eventPong(l.buffer, event.IdBytes(), l.localID)
 
-	_, err := l.conn.WriteToUDP(resp, addr)
-
-	return err
+	return l.write(addr, resp)
 }
 
 // store a value from the sender and send a response to confirm
@@ -145,9 +158,11 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	s := new(protocol.Store)
 	s.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	if s.ValuesLength() > 1 {
-		log.Println("batch receiving", s.ValuesLength(), "from", addr.String(), "to", l.conn.LocalAddr())
-	}
+	/*
+		if s.ValuesLength() > 1 {
+			log.Println("batch receiving", s.ValuesLength(), "from", addr.String(), "to", l.conn.LocalAddr())
+		}
+	*/
 
 	for i := 0; i < s.ValuesLength(); i++ {
 		v := new(protocol.Value)
@@ -158,9 +173,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 
 	resp := eventStoreResponse(l.buffer, event.IdBytes(), l.localID)
 
-	_, err := l.conn.WriteToUDP(resp, addr)
-
-	return err
+	return l.write(addr, resp)
 }
 
 // find all given nodes
@@ -179,9 +192,7 @@ func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
 
 	resp := eventFindNodeResponse(l.buffer, event.IdBytes(), l.localID, nodes)
 
-	_, err := l.conn.WriteToUDP(resp, addr)
-
-	return err
+	return l.write(addr, resp)
 }
 
 func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
@@ -209,9 +220,7 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 		resp = eventFindValueNotFoundResponse(l.buffer, event.IdBytes(), l.localID, nodes)
 	}
 
-	_, err := l.conn.WriteToUDP(resp, addr)
-
-	return err
+	return l.write(addr, resp)
 }
 
 func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
@@ -221,7 +230,6 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 	// calculated as: 65535 - 112 (event overhead) / 62 (value table with value length of 0)
 	values := make([]*Value, 0, 1100)
 	var size int // total size of the current values
-	start := time.Now()
 
 	l.storage.Iterate(func(value *Value) bool {
 		d1 := distance(l.localID, value.Key)
@@ -233,7 +241,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 				rid := randomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-				log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
+				// log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
 
 				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
 					if err != nil {
@@ -251,7 +259,6 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 				// reset the values array and size
 				values = values[:0]
 				size = 0
-				start = time.Now()
 			}
 
 			// add the remaining value to the array
@@ -271,7 +278,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 		rid := randomID()
 		req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-		log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
+		// log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
 
 		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
 			if err != nil {
@@ -292,6 +299,17 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
 
 	// log.Println("sending event to", to.String())
+
+	return l.write(to, data)
+}
+
+func (l *listener) write(to *net.UDPAddr, data []byte) error {
+	/*
+		if len(data) > 1350 {
+			// we may be exceeding MTU here and getting fragmented
+			log.Println("send possibly fragmented size:", len(data))
+		}
+	*/
 
 	_, err := l.conn.WriteToUDP(data, to)
 

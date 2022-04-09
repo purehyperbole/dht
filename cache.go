@@ -90,7 +90,7 @@ func (c *cache) cleanup(refresh time.Duration) {
 		c.mu.Lock()
 
 		for k, v := range c.requests {
-			if v.ttl.After(now) {
+			if now.After(v.ttl) {
 				v.callback(nil, ErrRequestTimeout)
 				delete(c.requests, k)
 			}
