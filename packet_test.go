@@ -108,3 +108,24 @@ func TestPacketManagerAssemble(t *testing.T) {
 
 	m.done(p)
 }
+
+func TestPacketManagerFragmentAssemble(t *testing.T) {
+	m := newPacketManager()
+
+	id := randomID()
+	data := make([]byte, MaxPayloadSize/2)
+	rand.Read(data)
+
+	p := m.fragment(id, data)
+
+	f := p.next()
+
+	assert.Len(t, f, len(data)+PacketHeaderSize)
+
+	// on the last fragment, we should be returned a full packet
+	p = m.assemble(f)
+	assert.NotNil(t, p)
+	assert.Equal(t, data, p.data())
+
+	m.done(p)
+}

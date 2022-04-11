@@ -29,6 +29,8 @@ type DHT struct {
 	routing *routingTable
 	// cache that tracks requests sent to other nodes
 	cache *cache
+	// manages fragmented packets that are larger than MTU
+	packet *packetManager
 	// udp listeners that are handling requests to/from other nodes
 	listeners []*listener
 	// pool of flatbuffer builder bufs to use when sending requests
@@ -72,6 +74,7 @@ func New(cfg *Config) (*DHT, error) {
 		routing: newRoutingTable(n),
 		cache:   newCache(cfg.Timeout),
 		storage: cfg.Storage,
+		packet:  newPacketManager(),
 		pool: sync.Pool{
 			New: func() any {
 				return flatbuffers.NewBuilder(1024)
@@ -135,7 +138,7 @@ func (d *DHT) listen() error {
 			return err
 		}
 
-		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.config.Timeout))
+		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.packet, d.config.Timeout))
 	}
 
 	return nil

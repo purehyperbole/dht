@@ -84,6 +84,7 @@ func (m *packetManager) assemble(f []byte) *packet {
 	// shortcut this is the event isn't fragmented
 	if f[KEY_BYTES+2] == 1 {
 		return &packet{
+			len: int32(len(f) - PacketHeaderSize),
 			buf: f[PacketHeaderSize:],
 		}
 	}
