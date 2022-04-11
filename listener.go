@@ -230,7 +230,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 
 		if d2 > d1 {
 			// if we cant fit any more values in this event, send it
-			if size >= MaxPayloadSize {
+			if size >= MaxEventSize {
 				rid := randomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
