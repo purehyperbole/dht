@@ -1,6 +1,8 @@
 package dht
 
 import (
+	"encoding/binary"
+
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/purehyperbole/dht/protocol"
 )
@@ -145,8 +147,14 @@ func eventFindNodeResponse(buf *flatbuffers.Builder, id, sender []byte, nodes []
 	ns := make([]flatbuffers.UOffsetT, len(nodes))
 
 	for i, n := range nodes {
+		// save a few bytes here by using the non-string
+		// representation of port and ip
+		a := make([]byte, 6)
+		copy(a, n.address.IP)
+		binary.LittleEndian.PutUint16(a[4:], uint16(n.address.Port))
+
 		nid := buf.CreateByteVector(n.id)
-		nad := buf.CreateByteVector([]byte(n.address.String()))
+		nad := buf.CreateByteVector(a)
 
 		protocol.NodeStart(buf)
 		protocol.NodeAddId(buf, nid)
@@ -248,8 +256,14 @@ func eventFindValueNotFoundResponse(buf *flatbuffers.Builder, id, sender []byte,
 	ns := make([]flatbuffers.UOffsetT, len(nodes))
 
 	for i, n := range nodes {
+		// save a few bytes here by using the non-string
+		// representation of port and ip
+		a := make([]byte, 6)
+		copy(a, n.address.IP)
+		binary.LittleEndian.PutUint16(a[4:], uint16(n.address.Port))
+
 		nid := buf.CreateByteVector(n.id)
-		nad := buf.CreateByteVector([]byte(n.address.String()))
+		nad := buf.CreateByteVector([]byte(a))
 
 		protocol.NodeStart(buf)
 		protocol.NodeAddId(buf, nid)

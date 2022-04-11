@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"runtime"
@@ -355,18 +354,19 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 				return
 			}
 
-			address, err := net.ResolveUDPAddr("udp", string(nd.AddressBytes()))
-			if err != nil {
-				callback(nil, errors.New("find value response contains a node with an invalid udp address"))
-				return
+			nad := &net.UDPAddr{
+				IP:   make(net.IP, 4),
+				Port: int(binary.LittleEndian.Uint16(nd.AddressBytes()[4:])),
 			}
 
-			id := make([]byte, KEY_BYTES)
-			copy(id, nd.IdBytes())
+			copy(nad.IP, nd.AddressBytes()[:4])
+
+			nid := make([]byte, KEY_BYTES)
+			copy(nid, nd.IdBytes())
 
 			newNodes[i] = &node{
 				id:      id,
-				address: address,
+				address: nad,
 			}
 		}
 
@@ -469,11 +469,12 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			fn := new(protocol.Node)
 
 			if f.Nodes(fn, i) {
-				nad, err := net.ResolveUDPAddr("udp", string(fn.AddressBytes()))
-				if err != nil {
-					callback(fmt.Errorf("find node response includes an invalid node address: %w", err))
-					return
+				nad := &net.UDPAddr{
+					IP:   make(net.IP, 4),
+					Port: int(binary.LittleEndian.Uint16(fn.AddressBytes()[4:])),
 				}
+
+				copy(nad.IP, fn.AddressBytes()[:4])
 
 				// create a copy of the node id
 				nid := make([]byte, fn.IdLength())

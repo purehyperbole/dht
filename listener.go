@@ -10,13 +10,6 @@ import (
 	"github.com/purehyperbole/dht/protocol"
 )
 
-const (
-	// MaxPayloadSize the maximum udp packet size
-	// setting this above MTU will cause fragmentation
-	// on networks that don't support it
-	MaxPayloadSize = 65024
-)
-
 // a udp socket listener that processes incoming and outgoing packets
 type listener struct {
 	// storage for all values
