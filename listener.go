@@ -1,7 +1,10 @@
 package dht
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -80,6 +83,8 @@ func (l *listener) process() {
 			panic(err)
 		}
 
+		// log.Println("READ", rb, "BYTES")
+
 		// if we have a fragmented packet, continue reading data
 		p := l.packet.assemble(b[:rb])
 		if p == nil {
@@ -91,6 +96,8 @@ func (l *listener) process() {
 		// log.Println("received event from:", addr, "size:", rb)
 
 		e := protocol.GetRootAsEvent(p.data(), 0)
+
+		// log.Printf("received id: %s len: %d", hex.EncodeToString(e.IdBytes()), len(p.data()))
 
 		// attempt to update the node first, but if it doesn't exist, insert it
 		if !l.routing.seen(e.SenderBytes()) {
@@ -114,6 +121,8 @@ func (l *listener) process() {
 				callback(e, nil)
 			}
 
+			l.packet.done(p)
+
 			continue
 		}
 
@@ -131,6 +140,7 @@ func (l *listener) process() {
 
 		if err != nil {
 			log.Println("failed to handle request: ", err.Error())
+			l.packet.done(p)
 			continue
 		}
 
@@ -143,6 +153,8 @@ func (l *listener) process() {
 		if transferKeys {
 			l.transferKeys(addr, e.SenderBytes())
 		}
+
+		l.packet.done(p)
 	}
 }
 
@@ -155,6 +167,8 @@ func (l *listener) pong(event *protocol.Event, addr *net.UDPAddr) error {
 
 // store a value from the sender and send a response to confirm
 func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
+	// log.Println("STORE HANDLER", hex.EncodeToString(event.IdBytes()))
+
 	payloadTable := new(flatbuffers.Table)
 
 	if !event.Payload(payloadTable) {
@@ -178,6 +192,8 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 
 // find all given nodes
 func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
+	// log.Println("FIND NODE HANDLER", hex.EncodeToString(event.IdBytes()))
+
 	payloadTable := new(flatbuffers.Table)
 
 	if !event.Payload(payloadTable) {
@@ -304,16 +320,31 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 }
 
 func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
+	log.Printf("sending data id: %s len: %d", hex.EncodeToString(id), len(data))
+
 	p := l.packet.fragment(id, data)
+	defer l.packet.done(p)
 
 	f := p.next()
 
+	var frag int
+
 	for f != nil {
+
+		log.Printf("sending frag id: %s len: %d", hex.EncodeToString(id), len(f))
+		if bytes.HasPrefix(f, []byte{0, 0, 0, 0, 0, 0}) {
+			fmt.Println(data)
+			fmt.Println(f)
+			panic(fmt.Sprintf("WRITING EMPTY BYTES FRAG: %d TOTAL: %d", frag+1, p.frg))
+		}
+
 		_, err := l.conn.WriteToUDP(f, to)
 
 		if err != nil {
 			return err
 		}
+
+		frag++
 
 		f = p.next()
 	}

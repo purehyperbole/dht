@@ -21,7 +21,7 @@ func TestPacketManagerFragment(t *testing.T) {
 	p := m.fragment(id, data)
 
 	assert.Equal(t, 3, p.frg)
-	assert.Equal(t, int32(MaxPacketSize*3), p.len)
+	assert.Equal(t, MaxPacketSize*3, p.len)
 
 	for i := 0; i < 3; i++ {
 		pf := p.next()
@@ -48,7 +48,7 @@ func TestPacketManagerFragment(t *testing.T) {
 	p = m.fragment(id, data)
 
 	assert.Equal(t, 3, p.frg)
-	assert.Equal(t, int32(MaxPacketSize*3)-300, p.len)
+	assert.Equal(t, MaxPacketSize*3-300, p.len)
 
 	read := len(data)
 
@@ -126,6 +126,31 @@ func TestPacketManagerFragmentAssemble(t *testing.T) {
 	p = m.assemble(f)
 	assert.NotNil(t, p)
 	assert.Equal(t, data, p.data())
+
+	m.done(p)
+
+	id = randomID()
+	data = make([]byte, 38424)
+	rand.Read(data)
+
+	p = m.fragment(id, data)
+
+	var fragments [][]byte
+
+	f = p.next()
+
+	for f != nil {
+		fragments = append(fragments, f)
+		f = p.next()
+	}
+
+	var p2 *packet
+
+	for i := range fragments {
+		p2 = m.assemble(fragments[i])
+	}
+
+	assert.Equal(t, data, p2.data())
 
 	m.done(p)
 }

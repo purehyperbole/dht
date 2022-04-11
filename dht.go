@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"runtime"
@@ -103,6 +105,7 @@ func New(cfg *Config) (*DHT, error) {
 		bn[i] = &node{address: addr}
 	}
 
+	fmt.Println("FIND NODE")
 	// TODO : this should be a recursive lookup, use journey
 	d.findNodes(bn, cfg.LocalID, func(err error) {
 		br <- err
@@ -118,6 +121,8 @@ func New(cfg *Config) (*DHT, error) {
 		}
 		successes++
 	}
+
+	fmt.Println("DONE")
 
 	if successes < 1 && len(cfg.BootstrapAddresses) > 1 {
 		return nil, errors.New("bootstrapping failed")
@@ -427,6 +432,7 @@ func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
 		rid := randomID()
 		req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
+		fmt.Println("FIND NODE -- ", hex.EncodeToString(rid))
 		// select the next listener to send our request
 		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 			n.address,
@@ -510,6 +516,8 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			// generate a new random request ID and event
 			rid := randomID()
 			req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
+
+			fmt.Println("FIND NODE CB -- ", hex.EncodeToString(rid))
 
 			// select the next listener to send our request
 			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
