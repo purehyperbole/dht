@@ -30,7 +30,7 @@ type packetManager struct {
 	mu        sync.Mutex
 }
 
-func newPacketPool() *packetManager {
+func newPacketManager() *packetManager {
 	m := &packetManager{
 		pool: sync.Pool{
 			New: func() any {
@@ -65,15 +65,15 @@ func (m *packetManager) fragment(id, data []byte) *packet {
 	p.pos = 0
 
 	for i := 0; i < p.frg; i++ {
-		offset := i * MaxPacketSize
+		offset := i * (MaxPacketSize)
 
 		// write the header to the fragment
-		copy(p.buf[offset:offset+KEY_BYTES], id)
-		p.buf[offset+KEY_BYTES+1] = byte(i + 1)
-		p.buf[offset+KEY_BYTES+2] = byte(p.frg)
+		copy(p.buf[offset:], id)
+		p.buf[offset+KEY_BYTES] = byte(i + 1)
+		p.buf[offset+KEY_BYTES+1] = byte(p.frg)
 
 		// write the data of the packet
-		copy(p.buf[offset+PacketHeaderSize:offset+PacketHeaderSize+MaxPayloadSize], data[i*MaxPayloadSize:])
+		copy(p.buf[offset+PacketHeaderSize:offset+PacketHeaderSize+MaxPayloadSize], data[i*MaxPayloadSize:]) // (i+1)*MaxPayloadSize]
 	}
 
 	return p
@@ -122,11 +122,9 @@ func (m *packetManager) assemble(f []byte) *packet {
 		p = pi.(*packet)
 	}
 
-	// add the fragment to the packet
-	p.add(f)
-
-	// if it's complete, return the packet
-	if p.complete() {
+	// add the fragment to the packet. if it's complete, return the packet
+	if p.add(f) {
+		m.fragments.Delete(k)
 		return p
 	}
 
@@ -157,22 +155,31 @@ type packet struct {
 
 // returns the next fragment to transmit. if there's none left to send, it returns nil
 func (p *packet) next() []byte {
-	if p.pos > p.frg*MaxPacketSize {
+	if p.pos >= int(p.len) {
 		return nil
 	}
 
-	p.pos++
+	ps := MaxPacketSize
 
-	return p.buf[p.pos : p.pos*MaxPacketSize]
+	// caculate the size of this packet
+	if p.pos+ps > int(p.len) {
+		ps = int(p.len) - p.pos
+	}
+
+	p.pos = p.pos + ps
+
+	return p.buf[p.pos-ps : p.pos]
 }
 
 // adds copies the fragments data to the packet buffer
-func (p *packet) add(f []byte) {
-	offset := int(f[KEY_BYTES+1])
+// returns true if all of the fragments are present
+func (p *packet) add(f []byte) bool {
+	offset := int(f[KEY_BYTES]) - 1
 	data := f[PacketHeaderSize:]
 
-	atomic.AddInt32(&p.len, int32(len(data)))
 	copy(p.buf[MaxPayloadSize*offset:], data)
+
+	return atomic.AddInt32(&p.len, int32(len(data))) > (int32(p.frg)-1)*MaxPayloadSize
 }
 
 // data returns the full data in the packets buffer
