@@ -7,6 +7,7 @@ A Kademlia DHT implementation for Go with a focus on performance and ease of use
  - wire protocol using flatbuffers
  - SO_REUSEPORT to concurrently handle requests on the same port
  - asynchronous api
+ - supports values larger than MTU
 
 ## Usage
 
@@ -115,6 +116,7 @@ $ go test -v -bench=.
 - [x] node join/leave
 - [x] user defined storage
 - [x] multiple values per store request
+- [x] handles packets larger than MTU
 - [ ] peer refresh
 - [ ] key refresh
 - [ ] latency based route selection
