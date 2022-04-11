@@ -306,12 +306,16 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 	p := l.packet.fragment(id, data)
 
-	for f := p.next(); f != nil; {
+	f := p.next()
+
+	for f != nil {
 		_, err := l.conn.WriteToUDP(f, to)
 
 		if err != nil {
 			return err
 		}
+
+		f = p.next()
 	}
 
 	return nil
