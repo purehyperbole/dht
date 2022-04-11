@@ -1,9 +1,7 @@
 package dht
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"time"
@@ -30,9 +28,6 @@ type listener struct {
 	localID []byte
 	// the amount of time before a request expires and times out
 	timeout time.Duration
-
-	// temporary write buffer for events that fit into a single frame
-	twb []byte
 }
 
 func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage Storage, packet *packetManager, timeout time.Duration) *listener {
@@ -45,7 +40,6 @@ func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache
 		buffer:  flatbuffers.NewBuilder(65527),
 		localID: localID,
 		timeout: timeout,
-		twb:     make([]byte, MaxPacketSize),
 	}
 
 	go l.process()
@@ -310,22 +304,12 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 
 	f := p.next()
 
-	var frag int
-
 	for f != nil {
-		if bytes.HasPrefix(f, []byte{0, 0, 0, 0, 0, 0}) {
-			fmt.Println(data)
-			fmt.Println(f)
-			panic(fmt.Sprintf("WRITING EMPTY BYTES FRAG: %d TOTAL: %d", frag+1, p.frg))
-		}
-
 		_, err := l.conn.WriteToUDP(f, to)
 
 		if err != nil {
 			return err
 		}
-
-		frag++
 
 		f = p.next()
 	}
