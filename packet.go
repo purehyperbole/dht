@@ -2,7 +2,6 @@ package dht
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/maphash"
 	"sync"
 	"sync/atomic"
@@ -66,14 +65,16 @@ func (m *packetManager) needsFragmenting(data []byte) bool {
 func (m *packetManager) fragment(id, data []byte) *packet {
 	p := m.pool.Get().(*packet)
 
-	fmt.Println("DATA LEN:", len(data), "FRAGMENTS:", (len(data)/MaxPacketSize-1)+2)
-
 	p.frg = (len(data)/MaxPacketSize - 1) + 2
 	p.len = len(data) + (p.frg * PacketHeaderSize)
 	p.pos = 0
 
-	for i := 0; i < p.frg; i++ {
-		offset := i * (MaxPacketSize)
+	var i, offset int
+
+	for {
+		if offset >= p.len {
+			break
+		}
 
 		// write the header to the fragment
 		copy(p.buf[offset:], id)
@@ -81,13 +82,10 @@ func (m *packetManager) fragment(id, data []byte) *packet {
 		p.buf[offset+KEY_BYTES+1] = byte(p.frg)
 		binary.LittleEndian.PutUint16(p.buf[offset+KEY_BYTES+2:], uint16(len(data)))
 
-		fmt.Println("WRITING HEADER", p.buf[offset:offset+PacketHeaderSize])
+		copy(p.buf[offset+PacketHeaderSize:offset+MaxPacketSize], data[i*MaxPayloadSize:])
 
-		// write the data of the packet
-		fmt.Println("COPYING FROM", i*MaxPayloadSize, "TO", offset+PacketHeaderSize, ":", offset+PacketHeaderSize+MaxPayloadSize, "FRAG", i+1)
-		// fmt.Println(data[i*MaxPayloadSize:])
-
-		copy(p.buf[offset+PacketHeaderSize:offset+MaxPacketSize], data[i*MaxPayloadSize:]) // (i+1)*MaxPayloadSize]
+		offset = offset + MaxPacketSize
+		i++
 	}
 
 	return p
@@ -95,7 +93,7 @@ func (m *packetManager) fragment(id, data []byte) *packet {
 
 // assembles a packet into an event. if there are missing fragments, this will return nil
 func (m *packetManager) assemble(f []byte) *packet {
-	// shortcut this is the event isn't fragmented
+	// shortcut this if the event isn't fragmented
 	if f[KEY_BYTES+1] == 1 {
 		return &packet{
 			len: len(f) - PacketHeaderSize,
@@ -123,13 +121,6 @@ func (m *packetManager) assemble(f []byte) *packet {
 		p.frg = int(f[KEY_BYTES+1])
 		p.len = int(binary.LittleEndian.Uint16(f[KEY_BYTES+2:]))
 		p.pos = 0
-
-		fmt.Println("READING HEADER", f[:PacketHeaderSize], p.len)
-
-		if p.len == 0 {
-			fmt.Println(f)
-			panic("READ AN EMPTY BYTE")
-		}
 
 		// this may be racy if two listeners
 		// receive different fragments at the same
@@ -179,7 +170,6 @@ type packet struct {
 
 // returns the next fragment to transmit. if there's none left to send, it returns nil
 func (p *packet) next() []byte {
-	fmt.Println("POS:", p.pos, "LEN:", p.len)
 	if int(p.pos) >= p.len {
 		return nil
 	}
@@ -193,8 +183,6 @@ func (p *packet) next() []byte {
 
 	p.pos = p.pos + int32(ps)
 
-	fmt.Println("  SPITTING OUT", int(p.pos)-ps, ":", p.pos, "JUMPED BY", ps)
-
 	return p.buf[int(p.pos)-ps : p.pos]
 }
 
@@ -207,8 +195,6 @@ func (p *packet) add(f []byte) bool {
 	copy(p.buf[MaxPayloadSize*offset:], data)
 
 	return atomic.AddInt32(&p.pos, int32(len(data))) == int32(p.len)
-
-	// return atomic.AddInt32(&p.len, int32(len(data))) > (int32(p.frg)-1)*MaxPayloadSize
 }
 
 // data returns the full data in the packets buffer

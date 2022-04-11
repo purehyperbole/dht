@@ -2,7 +2,6 @@ package dht
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -83,8 +82,6 @@ func (l *listener) process() {
 			panic(err)
 		}
 
-		// log.Println("READ", rb, "BYTES")
-
 		// if we have a fragmented packet, continue reading data
 		p := l.packet.assemble(b[:rb])
 		if p == nil {
@@ -96,8 +93,6 @@ func (l *listener) process() {
 		// log.Println("received event from:", addr, "size:", rb)
 
 		e := protocol.GetRootAsEvent(p.data(), 0)
-
-		// log.Printf("received id: %s len: %d", hex.EncodeToString(e.IdBytes()), len(p.data()))
 
 		// attempt to update the node first, but if it doesn't exist, insert it
 		if !l.routing.seen(e.SenderBytes()) {
@@ -167,8 +162,6 @@ func (l *listener) pong(event *protocol.Event, addr *net.UDPAddr) error {
 
 // store a value from the sender and send a response to confirm
 func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
-	// log.Println("STORE HANDLER", hex.EncodeToString(event.IdBytes()))
-
 	payloadTable := new(flatbuffers.Table)
 
 	if !event.Payload(payloadTable) {
@@ -192,8 +185,6 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 
 // find all given nodes
 func (l *listener) findNode(event *protocol.Event, addr *net.UDPAddr) error {
-	// log.Println("FIND NODE HANDLER", hex.EncodeToString(event.IdBytes()))
-
 	payloadTable := new(flatbuffers.Table)
 
 	if !event.Payload(payloadTable) {
@@ -257,8 +248,6 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 				rid := randomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-				// log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
-
 				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
 					if err != nil {
 						// just log this error for now, but it might be best to attempt to resend?
@@ -294,8 +283,6 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 		rid := randomID()
 		req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-		// log.Println("batch sending", len(values), "from", l.conn.LocalAddr().String(), "to", to.String(), "in", time.Since(start))
-
 		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
 			if err != nil {
 				// just log this error for now, but it might be best to attempt to resend?
@@ -314,14 +301,10 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 	// register the callback for this request
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
 
-	// log.Println("sending event to", to.String())
-
 	return l.write(to, id, data)
 }
 
 func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
-	log.Printf("sending data id: %s len: %d", hex.EncodeToString(id), len(data))
-
 	p := l.packet.fragment(id, data)
 	defer l.packet.done(p)
 
@@ -330,8 +313,6 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 	var frag int
 
 	for f != nil {
-
-		log.Printf("sending frag id: %s len: %d", hex.EncodeToString(id), len(f))
 		if bytes.HasPrefix(f, []byte{0, 0, 0, 0, 0, 0}) {
 			fmt.Println(data)
 			fmt.Println(f)
