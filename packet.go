@@ -5,6 +5,7 @@ import (
 	"hash/maphash"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -25,10 +26,10 @@ const (
 
 // pool for building and reassembling udp packets
 type packetManager struct {
-	fragments sync.Map
-	pool      sync.Pool
-	hasher    maphash.Hash
-	mu        sync.Mutex
+	packets sync.Map
+	pool    sync.Pool
+	hasher  maphash.Hash
+	mu      sync.Mutex
 }
 
 func newPacketManager() *packetManager {
@@ -43,6 +44,8 @@ func newPacketManager() *packetManager {
 	}
 
 	m.hasher.SetSeed(maphash.MakeSeed())
+
+	go m.cleanup()
 
 	return m
 }
@@ -119,18 +122,19 @@ func (m *packetManager) assemble(f []byte) *packet {
 	// load the packet from our packet cache
 	// or create it if its a new fragmented packet
 	// we've not seen before
-	pi, ok := m.fragments.Load(k)
+	pi, ok := m.packets.Load(k)
 	if !ok {
 		p = m.pool.Get().(*packet)
 		p.frg = int(f[KEY_BYTES+1])
 		p.len = int(binary.LittleEndian.Uint16(f[KEY_BYTES+2:]))
 		p.pos = 0
+		p.ttl = time.Now().Add(time.Second * 5)
 
 		// this may be racy if two listeners
 		// receive different fragments at the same
 		// time and the cache does not contain a packet
 		// for them!!
-		pl, ok := m.fragments.LoadOrStore(k, p)
+		pl, ok := m.packets.LoadOrStore(k, p)
 		if ok {
 			// return our unused packet to the pool
 			m.pool.Put(p)
@@ -143,19 +147,34 @@ func (m *packetManager) assemble(f []byte) *packet {
 
 	// add the fragment to the packet. if it's complete, return the packet
 	if p.add(f) {
-		m.fragments.Delete(k)
+		m.packets.Delete(k)
 		return p
 	}
 
 	return nil
 }
 
-/*
-	we need to fragment events into smaller chunks if they do not fit into an
-	IP packet. we split a single event into mutliple packets and assemble
-	them at the other end.
+func (m *packetManager) cleanup() {
+	for {
+		time.Sleep(time.Second * 5)
+		now := time.Now()
 
-	Each "packet" will have an additional 24 byte header that allows the
+		m.packets.Range(func(key, value any) bool {
+			p := value.(*packet)
+			if !p.complete() && now.After(p.ttl) {
+				// remove packets that
+				m.packets.Delete(key)
+			}
+			return true
+		})
+	}
+}
+
+/*
+	We need to fragment events into smaller chunks if they do not fit into an
+	IP packet.
+
+	Each fragment will have an additional 24 byte header that allows the
 	receiving end to determine which fragmented part belongs to what UDP packet:
 
 	| 20 bytes | byte | byte  | 2 bytes |
@@ -170,6 +189,8 @@ type packet struct {
 	len int
 	// the position in the buffer we currently are
 	pos int32
+	// the time this packet expires if not completed
+	ttl time.Time
 }
 
 // returns the next fragment to transmit. if there's none left to send, it returns nil
