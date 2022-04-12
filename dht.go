@@ -213,7 +213,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 					return
 				}
 
-				if atomic.AddInt32(&r, 1) == int32(len(ns)) {
+				if atomic.AddInt32(&r, 1) == int32(len(ns)-1) {
 					// we've had the correct number of responses back, so lets call the
 					// user provided callback with a success
 					callback(nil)

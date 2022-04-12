@@ -56,20 +56,6 @@ func (l *listener) process() {
 	// buffer maximum udp payload
 	b := make([]byte, 65527)
 
-	// TODO : implement a packet reassembler
-	// setup the size of our read and write buffers
-	// this will not be good on networks that have a
-	// smaller frame size than 64kb
-	err := l.conn.SetReadBuffer(1<<16 - 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = l.conn.SetWriteBuffer(1<<16 - 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	for {
 		rb, addr, err := l.conn.ReadFromUDP(b)
 		if err != nil {

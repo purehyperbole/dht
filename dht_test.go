@@ -197,7 +197,7 @@ func TestDHTClusterStoreFind(t *testing.T) {
 	time.Sleep(time.Millisecond * 200)
 
 	// add some nodes to the network
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 2; i++ {
 		c := &Config{
 			LocalID:       randomID(),
 			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
