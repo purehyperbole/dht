@@ -65,7 +65,7 @@ func (m *packetManager) needsFragmenting(data []byte) bool {
 func (m *packetManager) fragment(id, data []byte) *packet {
 	p := m.pool.Get().(*packet)
 
-	p.frg = (len(data)/MaxPacketSize - 1) + 2
+	p.frg = (len(data)/MaxPayloadSize - 1) + 2
 	p.len = len(data) + (p.frg * PacketHeaderSize)
 	p.pos = 0
 

@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"encoding/hex"
 	"errors"
 	"log"
 	"net"
@@ -75,6 +76,8 @@ func (l *listener) process() {
 			}
 			panic(err)
 		}
+
+		log.Printf("received data id: %s fragment: %d - %d", hex.EncodeToString(b[:20]), b[20], b[21])
 
 		// if we have a fragmented packet, continue reading data
 		p := l.packet.assemble(b[:rb])
@@ -295,6 +298,8 @@ func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(even
 	// register the callback for this request
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
 
+	log.Printf("sending data id: %s len: %d", hex.EncodeToString(id), len(data))
+
 	return l.write(to, id, data)
 }
 
@@ -304,7 +309,11 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 
 	f := p.next()
 
+	var frag int
+
 	for f != nil {
+		log.Printf("  sending frag id: %s fragment: %d, len: %d", hex.EncodeToString(id), frag+1, len(f))
+
 		_, err := l.conn.WriteToUDP(f, to)
 
 		if err != nil {
@@ -312,6 +321,8 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 		}
 
 		f = p.next()
+
+		frag++
 	}
 
 	return nil
