@@ -16,4 +16,6 @@ type Config struct {
 	Timeout time.Duration
 	// Storage implementation to use for storing key value pairs
 	Storage Storage
+	// Logging enables basic logging
+	Logging bool
 }

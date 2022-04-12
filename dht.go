@@ -138,7 +138,7 @@ func (d *DHT) listen() error {
 			return err
 		}
 
-		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.packet, d.config.Timeout))
+		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.packet, d.config.Timeout, d.config.Logging))
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"encoding/hex"
 	"errors"
 	"log"
 	"net"
@@ -28,9 +29,12 @@ type listener struct {
 	localID []byte
 	// the amount of time before a request expires and times out
 	timeout time.Duration
+	// enables basic logging
+	logging bool
 }
 
-func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage Storage, packet *packetManager, timeout time.Duration) *listener {
+// TODO : pass these params in as a struct!
+func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage Storage, packet *packetManager, timeout time.Duration, logging bool) *listener {
 	l := &listener{
 		conn:    conn,
 		routing: routing,
@@ -40,6 +44,7 @@ func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache
 		buffer:  flatbuffers.NewBuilder(65527),
 		localID: localID,
 		timeout: timeout,
+		logging: logging,
 	}
 
 	go l.process()
@@ -90,6 +95,10 @@ func (l *listener) process() {
 
 		// attempt to update the node first, but if it doesn't exist, insert it
 		if !l.routing.seen(e.SenderBytes()) {
+			if l.logging {
+				log.Printf("discovered new node id: %s address: %s", hex.EncodeToString(e.SenderBytes()), addr.String())
+			}
+
 			// insert/update the node in the routing table
 			nid := make([]byte, e.SenderLength())
 			copy(nid, e.SenderBytes())
