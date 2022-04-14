@@ -29,32 +29,25 @@ type listener struct {
 	localID []byte
 	// the amount of time before a request expires and times out
 	timeout time.Duration
+	// the size in bytes of the sockets send and receive buffer
+	bufferSize int
 	// enables basic logging
 	logging bool
-}
-
-// TODO : pass these params in as a struct!
-func newListener(conn *net.UDPConn, localID []byte, routing *routingTable, cache *cache, storage Storage, packet *packetManager, timeout time.Duration, logging bool) *listener {
-	l := &listener{
-		conn:    conn,
-		routing: routing,
-		cache:   cache,
-		storage: storage,
-		packet:  packet,
-		buffer:  flatbuffers.NewBuilder(65527),
-		localID: localID,
-		timeout: timeout,
-		logging: logging,
-	}
-
-	go l.process()
-
-	return l
 }
 
 func (l *listener) process() {
 	// buffer maximum udp payload
 	b := make([]byte, 65527)
+
+	err := l.conn.SetReadBuffer(l.bufferSize)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = l.conn.SetWriteBuffer(l.bufferSize)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	for {
 		rb, addr, err := l.conn.ReadFromUDP(b)

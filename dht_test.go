@@ -459,6 +459,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	// TODO : compare with keys transferred to ensure the number
 	// of keys lost matches what was not transferred
 	assert.Less(t, missing, 100)
+	fmt.Println(missing, "missing")
 }
 
 func BenchmarkDHTLocalStore(b *testing.B) {

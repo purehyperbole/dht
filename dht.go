@@ -55,6 +55,10 @@ func New(cfg *Config) (*DHT, error) {
 		cfg.Listeners = runtime.GOMAXPROCS(0)
 	}
 
+	if cfg.SocketBufferSize < 1 {
+		cfg.SocketBufferSize = 32 * 1024 * 1024
+	}
+
 	if cfg.Storage == nil {
 		cfg.Storage = newInMemoryStorage()
 	}
@@ -138,7 +142,22 @@ func (d *DHT) listen() error {
 			return err
 		}
 
-		d.listeners = append(d.listeners, newListener(c.(*net.UDPConn), d.config.LocalID, d.routing, d.cache, d.storage, d.packet, d.config.Timeout, d.config.Logging))
+		l := &listener{
+			conn:       c.(*net.UDPConn),
+			routing:    d.routing,
+			cache:      d.cache,
+			storage:    d.storage,
+			packet:     d.packet,
+			buffer:     flatbuffers.NewBuilder(65527),
+			localID:    d.config.LocalID,
+			timeout:    d.config.Timeout,
+			logging:    d.config.Logging,
+			bufferSize: d.config.SocketBufferSize,
+		}
+
+		go l.process()
+
+		d.listeners = append(d.listeners, l)
 	}
 
 	return nil

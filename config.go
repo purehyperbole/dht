@@ -16,6 +16,8 @@ type Config struct {
 	Timeout time.Duration
 	// Storage implementation to use for storing key value pairs
 	Storage Storage
+	// SocketBufferSize sets the size of the udp sockets send and receive buffer
+	SocketBufferSize int
 	// Logging enables basic logging
 	Logging bool
 }
