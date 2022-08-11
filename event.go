@@ -66,7 +66,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Va
 
 	// prepend nodes to vector in reverse order
 	for i := len(values) - 1; i >= 0; i-- {
-		buf.PrependUOffsetT(vs[0])
+		buf.PrependUOffsetT(vs[i])
 	}
 
 	vv := buf.EndVector(len(values))

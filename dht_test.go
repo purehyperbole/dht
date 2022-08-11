@@ -323,12 +323,16 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 
 		keys[i] = k
 
-		d1 := distance(bc.LocalID, k)
-		d2 := distance(c.LocalID, k)
+		/*
+			d1 := distance(bc.LocalID, k)
+			d2 := distance(c.LocalID, k)
 
-		if d2 > d1 {
-			transferrable[testHash(k)] = struct{}{}
-		}
+			if d2 > d1 {
+				transferrable[testHash(k)] = struct{}{}
+			}
+		*/
+
+		transferrable[testHash(k)] = struct{}{}
 	}
 
 	// wait some time for the listeners to start
@@ -348,6 +352,8 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 			require.Fail(t, "timed out")
 		}
 	}
+
+	// TODO add test case replicating when network size is > K
 }
 
 func TestDHTClusterNodeJoinLeave(t *testing.T) {
@@ -458,8 +464,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 
 	// TODO : compare with keys transferred to ensure the number
 	// of keys lost matches what was not transferred
-	assert.Less(t, missing, 100)
-	fmt.Println(missing, "missing")
+	assert.Equal(t, missing, 0)
 }
 
 func BenchmarkDHTLocalStore(b *testing.B) {

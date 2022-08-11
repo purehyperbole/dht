@@ -152,6 +152,19 @@ func (t *routingTable) closestN(id []byte, count int) []*node {
 	return nodes[:count]
 }
 
+// neighbours the total number of nodes known to us
+func (r *routingTable) neighbours() int {
+	var neighbours int
+
+	for i := range r.buckets {
+		r.buckets[i].mu.Lock()
+		neighbours = neighbours + r.buckets[i].size
+		r.buckets[i].mu.Unlock()
+	}
+
+	return neighbours
+}
+
 // bucketID gets the correct bucket id for a given node, based on it's xor distance from our node
 func bucketID(localID, targetID []byte) int {
 	pfx := distance(localID, targetID)

@@ -220,11 +220,15 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 	values := make([]*Value, 0, 1100)
 	var size int // total size of the current values
 
+	// determine whether we should transfer all nodes if the number of nodes in the network is
+	// below the replication factor
+	transferAll := l.routing.neighbours() < K
+
 	l.storage.Iterate(func(value *Value) bool {
 		d1 := distance(l.localID, value.Key)
 		d2 := distance(id, value.Key)
 
-		if d2 > d1 {
+		if transferAll || d2 > d1 {
 			// if we cant fit any more values in this event, send it
 			if size >= MaxEventSize {
 				rid := randomID()
