@@ -88,6 +88,18 @@ func main() {
 }
 ```
 
+## OS Tuning
+
+For most linux distros, socket send and receive buffers are set very low. This will almost certainly result in large amounts of packet loss at higher throughput levels as these buffers get overrun.
+
+How large these buffers will need to be will be dependent on your workload, so you should experiment to find the correct value.
+
+You can temporarily increase the of the read and write buffers via sysctl:
+```sh
+# set the rmem and wmem buffers to ~128 MB each
+$ sysctl -w net.core.rmem_max=536870912 && sysctl -w net.core.rmem_default=134217728 && sysctl -w net.core.wmem_max=536870912 && sysctl -w net.core.wmem_default=134217728
+```
+
 ## Development
 
 To re-generate the flatbuffer definitions for the wire protocol:
