@@ -16,6 +16,7 @@ import (
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/purehyperbole/dht/protocol"
+	"golang.org/x/net/ipv4"
 	"golang.org/x/sys/unix"
 )
 
@@ -142,8 +143,18 @@ func (d *DHT) listen() error {
 			return err
 		}
 
+		err = c.(*net.UDPConn).SetReadBuffer(d.config.SocketBufferSize)
+		if err != nil {
+			return err
+		}
+
+		err = c.(*net.UDPConn).SetWriteBuffer(d.config.SocketBufferSize)
+		if err != nil {
+			return err
+		}
+
 		l := &listener{
-			conn:       c.(*net.UDPConn),
+			conn:       ipv4.NewPacketConn(c),
 			routing:    d.routing,
 			cache:      d.cache,
 			storage:    d.storage,
@@ -153,12 +164,20 @@ func (d *DHT) listen() error {
 			timeout:    d.config.Timeout,
 			logging:    d.config.Logging,
 			bufferSize: d.config.SocketBufferSize,
+			batch:      make([]ipv4.Message, 1024),
 		}
 
+		for i := range l.batch {
+			l.batch[i].Buffers = [][]byte{make([]byte, 1500)}
+		}
+
+		go l.flusher()
 		go l.process()
 
 		d.listeners = append(d.listeners, l)
 	}
+
+	go d.monitor()
 
 	return nil
 }
@@ -188,7 +207,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	ns := d.routing.closestN(key, K)
 
 	if len(ns) < 1 {
-		callback(errors.New("no nodes found!"))
+		callback(errors.New("no nodes found"))
 		return
 	}
 
@@ -267,7 +286,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	// but here we're only send a request to the closest node
 	ns := d.routing.closestN(key, K)
 	if len(ns) == 0 {
-		callback(nil, errors.New("no nodes found!"))
+		callback(nil, errors.New("no nodes found"))
 		return
 	}
 

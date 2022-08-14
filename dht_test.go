@@ -301,7 +301,7 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 	// create config for a new node, but don't join yet
 	c := &Config{
 		LocalID:       randomID(),
-		ListenAddress: fmt.Sprintf("127.0.0.1:9001"),
+		ListenAddress: "127.0.0.1:9001",
 		BootstrapAddresses: []string{
 			bc.ListenAddress,
 		},
@@ -429,7 +429,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 
 	c := &Config{
 		LocalID:       randomID(),
-		ListenAddress: fmt.Sprintf("127.0.0.1:10000"),
+		ListenAddress: "127.0.0.1:10000",
 		BootstrapAddresses: []string{
 			bc.ListenAddress,
 		},
@@ -642,6 +642,7 @@ func BenchmarkDHTLocalFind(b *testing.B) {
 	})
 
 	err = <-ch
+	require.Nil(b, err)
 
 	// test with multiple find requests in parallel
 	// these requests are synchronous, you could maybe

@@ -18,14 +18,6 @@ type node struct {
 	pending int
 }
 
-// newNode creates a new node from it's id and address
-func newNode(id []byte, address *net.UDPAddr) *node {
-	return &node{
-		id:      id,
-		address: address,
-	}
-}
-
 func randomID() []byte {
 	id := make([]byte, KEY_BYTES)
 	rand.Read(id)

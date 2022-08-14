@@ -5,16 +5,18 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/purehyperbole/dht/protocol"
+	"golang.org/x/net/ipv4"
 )
 
 // a udp socket listener that processes incoming and outgoing packets
 type listener struct {
 	// udp listener
-	conn *net.UDPConn
+	conn *ipv4.PacketConn
 	// routing table
 	routing *routingTable
 	// request cache
@@ -31,26 +33,26 @@ type listener struct {
 	timeout time.Duration
 	// the size in bytes of the sockets send and receive buffer
 	bufferSize int
+	// collection of messages that will be written in batch to the underlying socket
+	batch []ipv4.Message
+	// size of the current write batch
+	batchSize int
+	// mutex to protect writes to the write batck
+	mu sync.Mutex
 	// enables basic logging
 	logging bool
 }
 
 func (l *listener) process() {
-	// buffer maximum udp payload
-	b := make([]byte, 65527)
+	ms := make([]ipv4.Message, 1024)
 
-	err := l.conn.SetReadBuffer(l.bufferSize)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = l.conn.SetWriteBuffer(l.bufferSize)
-	if err != nil {
-		log.Fatal(err)
+	for i := range ms {
+		// create a buffer the size of MTU
+		ms[i].Buffers = [][]byte{make([]byte, 1500)}
 	}
 
 	for {
-		rb, addr, err := l.conn.ReadFromUDP(b)
+		bs, err := l.conn.ReadBatch(ms, 0)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				// network connection closed, so
@@ -60,79 +62,84 @@ func (l *listener) process() {
 			panic(err)
 		}
 
-		// if we have a fragmented packet, continue reading data
-		p := l.packet.assemble(b[:rb])
-		if p == nil {
-			continue
-		}
-
-		var transferKeys bool
-
-		// log.Println("received event from:", addr, "size:", rb)
-
-		e := protocol.GetRootAsEvent(p.data(), 0)
-
-		// attempt to update the node first, but if it doesn't exist, insert it
-		if !l.routing.seen(e.SenderBytes()) {
-			if l.logging {
-				log.Printf("discovered new node id: %s address: %s", hex.EncodeToString(e.SenderBytes()), addr.String())
+		for i := 0; i < bs; i++ {
+			// if we have a fragmented packet, continue reading data
+			p := l.packet.assemble(ms[i].Buffers[0][:ms[i].N])
+			if p == nil {
+				continue
 			}
 
-			// insert/update the node in the routing table
-			nid := make([]byte, e.SenderLength())
-			copy(nid, e.SenderBytes())
+			addr := ms[i].Addr.(*net.UDPAddr)
 
-			l.routing.insert(nid, addr)
+			var transferKeys bool
 
-			// this node is new to us, so we should send it any
-			// keys that are closer to it than to us
-			transferKeys = true
-		}
+			// log.Println("received event from:", addr, "size:", rb)
 
-		// if this is a response to a query, send the response event to
-		// the registered callback
-		if e.Response() {
-			// update the senders last seen time in the routing table
-			callback, ok := l.cache.pop(e.IdBytes())
-			if ok {
-				callback(e, nil)
+			e := protocol.GetRootAsEvent(p.data(), 0)
+
+			// attempt to update the node first, but if it doesn't exist, insert it
+			if !l.routing.seen(e.SenderBytes()) {
+				if l.logging {
+					log.Printf("discovered new node id: %s address: %s", hex.EncodeToString(e.SenderBytes()), addr.String())
+				}
+
+				// insert/update the node in the routing table
+				nid := make([]byte, e.SenderLength())
+				copy(nid, e.SenderBytes())
+
+				l.routing.insert(nid, addr)
+
+				// this node is new to us, so we should send it any
+				// keys that are closer to it than to us
+				transferKeys = true
+			}
+
+			// if this is a response to a query, send the response event to
+			// the registered callback
+			if e.Response() {
+				// update the senders last seen time in the routing table
+				callback, ok := l.cache.pop(e.IdBytes())
+				if ok {
+					callback(e, nil)
+				}
+
+				l.packet.done(p)
+
+				continue
+			}
+
+			// handle request
+			switch e.Event() {
+			case protocol.EventTypePING:
+				err = l.pong(e, addr)
+			case protocol.EventTypeSTORE:
+				err = l.store(e, addr)
+			case protocol.EventTypeFIND_NODE:
+				err = l.findNode(e, addr)
+			case protocol.EventTypeFIND_VALUE:
+				err = l.findValue(e, addr)
+			}
+
+			if err != nil {
+				log.Println("failed to handle request: ", err.Error())
+				l.packet.done(p)
+				continue
+			}
+
+			// TODO : this is going to end up with the receiver being ddos'ed
+			// with keys if storage is holding a large amount of values
+			// also, it's going to receive duplicate keys from other nodes?
+			// this will also lock our storage map and make us unresponsive to
+			// requests, potentially taking us out of other nodes routing tables.
+			// that may have a cascading effect...
+			if transferKeys {
+				l.transferKeys(addr, e.SenderBytes())
 			}
 
 			l.packet.done(p)
-
-			continue
 		}
-
-		// handle request
-		switch e.Event() {
-		case protocol.EventTypePING:
-			err = l.pong(e, addr)
-		case protocol.EventTypeSTORE:
-			err = l.store(e, addr)
-		case protocol.EventTypeFIND_NODE:
-			err = l.findNode(e, addr)
-		case protocol.EventTypeFIND_VALUE:
-			err = l.findValue(e, addr)
-		}
-
-		if err != nil {
-			log.Println("failed to handle request: ", err.Error())
-			l.packet.done(p)
-			continue
-		}
-
-		// TODO : this is going to end up with the receiver being ddos'ed
-		// with keys if storage is holding a large amount of values
-		// also, it's going to receive duplicate keys from other nodes?
-		// this will also lock our storage map and make us unresponsive to
-		// requests, potentially taking us out of other nodes routing tables.
-		// that may have a cascading effect...
-		if transferKeys {
-			l.transferKeys(addr, e.SenderBytes())
-		}
-
-		l.packet.done(p)
 	}
+
 }
 
 // send a pong response to the sender
@@ -296,15 +303,66 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 
 	f := p.next()
 
-	for f != nil {
-		_, err := l.conn.WriteToUDP(f, to)
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-		if err != nil {
-			return err
+	for f != nil {
+		l.batch[l.batchSize].Addr = to
+		// set the len of the buffer without allocating a new buffer
+		l.batch[l.batchSize].Buffers[0] = l.batch[l.batchSize].Buffers[0][:len(f)]
+		// copy the data from the fragment buffer into the message buffer
+		copy(l.batch[l.batchSize].Buffers[0], f)
+
+		l.batchSize++
+
+		if l.batchSize >= len(l.batch) {
+			err := l.flush(false)
+			if err != nil {
+				return err
+			}
 		}
 
 		f = p.next()
 	}
+
+	return nil
+}
+
+func (l *listener) flusher() {
+	t := time.NewTicker(time.Millisecond)
+
+	for {
+		<-t.C
+
+		err := l.flush(true)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				// network connection closed, so
+				// we can shutdown
+				return
+			}
+			panic(err)
+		}
+	}
+}
+
+func (l *listener) flush(lock bool) error {
+	if lock {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+	}
+
+	if l.batchSize < 1 {
+		return nil
+	}
+
+	_, err := l.conn.WriteBatch(l.batch[:l.batchSize], 0)
+	if err != nil {
+		return err
+	}
+
+	// reset the batch
+	l.batchSize = 0
 
 	return nil
 }

@@ -190,6 +190,7 @@ func (j *journey) responseReceived() (bool, bool) {
 	return j.completed, j.inflight < 1 && j.routes < 1
 }
 
+/*
 func (j *journey) has(n *node) bool {
 	for i := 0; i < j.routes; i++ {
 		if bytes.Equal(j.nodes[i].id, n.id) {
@@ -198,6 +199,7 @@ func (j *journey) has(n *node) bool {
 	}
 	return false
 }
+*/
 
 // Returns the length of the available routes
 func (j *journey) Len() int {

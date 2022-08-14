@@ -18,8 +18,6 @@ const (
 // routing table stores buckets of every known node on the network
 type routingTable struct {
 	localNode *node
-	// the number of active buckets
-	total int
 	// buckets of nodes active in the routing table
 	buckets []bucket
 }

@@ -171,14 +171,14 @@ func (m *packetManager) cleanup() {
 }
 
 /*
-	We need to fragment events into smaller chunks if they do not fit into an
-	IP packet.
+We need to fragment events into smaller chunks if they do not fit into an
+IP packet.
 
-	Each fragment will have an additional 24 byte header that allows the
-	receiving end to determine which fragmented part belongs to what UDP packet:
+Each fragment will have an additional 24 byte header that allows the
+receiving end to determine which fragmented part belongs to what UDP packet:
 
-	| 20 bytes | byte | byte  | 2 bytes |
-	| event id | part | total | size    |
+| 20 bytes | byte | byte  | 2 bytes |
+| event id | part | total | size    |
 */
 type packet struct {
 	// 128kb buffer used to construct packet fragments
