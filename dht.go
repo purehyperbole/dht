@@ -60,6 +60,14 @@ func New(cfg *Config) (*DHT, error) {
 		cfg.SocketBufferSize = 32 * 1024 * 1024
 	}
 
+	if cfg.SocketBatchSize < 1 {
+		cfg.SocketBatchSize = 1024
+	}
+
+	if cfg.SocketBatchInterval < 1 {
+		cfg.SocketBatchInterval = time.Millisecond
+	}
+
 	if cfg.Storage == nil {
 		cfg.Storage = newInMemoryStorage()
 	}
@@ -164,11 +172,14 @@ func (d *DHT) listen() error {
 			timeout:    d.config.Timeout,
 			logging:    d.config.Logging,
 			bufferSize: d.config.SocketBufferSize,
-			batch:      make([]ipv4.Message, 1024),
+			writeBatch: make([]ipv4.Message, d.config.SocketBatchSize),
+			readBatch:  make([]ipv4.Message, d.config.SocketBatchSize),
+			ftimer:     time.NewTicker(d.config.SocketBatchInterval),
 		}
 
-		for i := range l.batch {
-			l.batch[i].Buffers = [][]byte{make([]byte, 1500)}
+		for i := range l.writeBatch {
+			l.readBatch[i].Buffers = [][]byte{make([]byte, 1500)}
+			l.writeBatch[i].Buffers = [][]byte{make([]byte, 1500)}
 		}
 
 		go l.flusher()

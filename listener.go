@@ -33,26 +33,23 @@ type listener struct {
 	timeout time.Duration
 	// the size in bytes of the sockets send and receive buffer
 	bufferSize int
+	// collection of messages that will be read to in batch from the underlying socket
+	readBatch []ipv4.Message
 	// collection of messages that will be written in batch to the underlying socket
-	batch []ipv4.Message
+	writeBatch []ipv4.Message
 	// size of the current write batch
-	batchSize int
-	// mutex to protect writes to the write batck
+	writeBatchSize int
+	// mutex to protect writes to the write batch
 	mu sync.Mutex
+	// timer to schedule flushes to the underlying socket
+	ftimer *time.Ticker
 	// enables basic logging
 	logging bool
 }
 
 func (l *listener) process() {
-	ms := make([]ipv4.Message, 1024)
-
-	for i := range ms {
-		// create a buffer the size of MTU
-		ms[i].Buffers = [][]byte{make([]byte, 1500)}
-	}
-
 	for {
-		bs, err := l.conn.ReadBatch(ms, 0)
+		bs, err := l.conn.ReadBatch(l.readBatch, 0)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				// network connection closed, so
@@ -64,12 +61,12 @@ func (l *listener) process() {
 
 		for i := 0; i < bs; i++ {
 			// if we have a fragmented packet, continue reading data
-			p := l.packet.assemble(ms[i].Buffers[0][:ms[i].N])
+			p := l.packet.assemble(l.readBatch[i].Buffers[0][:l.readBatch[i].N])
 			if p == nil {
 				continue
 			}
 
-			addr := ms[i].Addr.(*net.UDPAddr)
+			addr := l.readBatch[i].Addr.(*net.UDPAddr)
 
 			var transferKeys bool
 
@@ -307,15 +304,15 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 	defer l.mu.Unlock()
 
 	for f != nil {
-		l.batch[l.batchSize].Addr = to
+		l.writeBatch[l.writeBatchSize].Addr = to
 		// set the len of the buffer without allocating a new buffer
-		l.batch[l.batchSize].Buffers[0] = l.batch[l.batchSize].Buffers[0][:len(f)]
+		l.writeBatch[l.writeBatchSize].Buffers[0] = l.writeBatch[l.writeBatchSize].Buffers[0][:len(f)]
 		// copy the data from the fragment buffer into the message buffer
-		copy(l.batch[l.batchSize].Buffers[0], f)
+		copy(l.writeBatch[l.writeBatchSize].Buffers[0], f)
 
-		l.batchSize++
+		l.writeBatchSize++
 
-		if l.batchSize >= len(l.batch) {
+		if l.writeBatchSize >= len(l.writeBatch) {
 			err := l.flush(false)
 			if err != nil {
 				return err
@@ -329,10 +326,11 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 }
 
 func (l *listener) flusher() {
-	t := time.NewTicker(time.Millisecond)
-
 	for {
-		<-t.C
+		_, ok := <-l.ftimer.C
+		if !ok {
+			return
+		}
 
 		err := l.flush(true)
 		if err != nil {
@@ -352,17 +350,17 @@ func (l *listener) flush(lock bool) error {
 		defer l.mu.Unlock()
 	}
 
-	if l.batchSize < 1 {
+	if l.writeBatchSize < 1 {
 		return nil
 	}
 
-	_, err := l.conn.WriteBatch(l.batch[:l.batchSize], 0)
+	_, err := l.conn.WriteBatch(l.writeBatch[:l.writeBatchSize], 0)
 	if err != nil {
 		return err
 	}
 
 	// reset the batch
-	l.batchSize = 0
+	l.writeBatchSize = 0
 
 	return nil
 }

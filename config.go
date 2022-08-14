@@ -18,6 +18,10 @@ type Config struct {
 	Storage Storage
 	// SocketBufferSize sets the size of the udp sockets send and receive buffer
 	SocketBufferSize int
+	// SocketBatchSize the batch size of udp messages that will be written to the underlying socket
+	SocketBatchSize int
+	// SocketBatchInterval the period with which the current batch of udp messages will be written to the underlying socket if not full
+	SocketBatchInterval time.Duration
 	// Logging enables basic logging
 	Logging bool
 }
