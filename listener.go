@@ -238,7 +238,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 		if transferAll || d2 > d1 {
 			// if we cant fit any more values in this event, send it
 			if size >= MaxEventSize {
-				rid := randomID()
+				rid := pseudorandomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
 				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
@@ -273,7 +273,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 
 	// send any unfinished values
 	if len(values) > 0 {
-		rid := randomID()
+		rid := pseudorandomID()
 		req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
 		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {

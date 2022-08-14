@@ -234,7 +234,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		}
 
 		// generate a new random request ID and event
-		rid := randomID()
+		rid := pseudorandomID()
 		req := eventStoreRequest(buf, rid, d.config.LocalID, v)
 
 		// select the next listener to send our request
@@ -301,7 +301,7 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 		defer d.pool.Put(buf)
 
 		// generate a new random request ID
-		rid := randomID()
+		rid := pseudorandomID()
 		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 		// select the next listener to send our request
@@ -429,7 +429,7 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 
 		for _, n := range ns {
 			// generate a new random request ID
-			rid := randomID()
+			rid := pseudorandomID()
 			req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 			// select the next listener to send our request
@@ -462,7 +462,7 @@ func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
 
 	for _, n := range ns {
 		// generate a new random request ID and event
-		rid := randomID()
+		rid := pseudorandomID()
 		req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
 		// select the next listener to send our request
@@ -546,7 +546,7 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 
 		for _, n := range ns {
 			// generate a new random request ID and event
-			rid := randomID()
+			rid := pseudorandomID()
 			req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
 			// select the next listener to send our request
@@ -589,7 +589,7 @@ func (d *DHT) monitor() {
 
 		for _, n := range nodes {
 			// send a ping to each node to see if it's still alive
-			rid := randomID()
+			rid := pseudorandomID()
 			req := eventPing(buf, rid, d.config.LocalID)
 
 			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
