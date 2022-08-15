@@ -62,7 +62,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Va
 		vs[i] = protocol.ValueEnd(buf)
 	}
 
-	protocol.FindNodeStartNodesVector(buf, len(values))
+	protocol.StoreStartValuesVector(buf, len(values))
 
 	// prepend nodes to vector in reverse order
 	for i := len(values) - 1; i >= 0; i-- {
