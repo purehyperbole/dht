@@ -226,11 +226,13 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	// before calling the user provided callback
 	var r int32
 
-	// get a spare buffer to generate our requests with
-	buf := d.pool.Get().(*flatbuffers.Builder)
-	defer d.pool.Put(buf)
+	reqs := make([]dhtreq, len(ns))
 
-	for _, n := range ns {
+	for i, n := range ns {
+		// get a spare buffer to generate our requests with
+		buf := d.pool.Get().(*flatbuffers.Builder)
+		defer d.pool.Put(buf)
+
 		// shortcut the request if its to the local node
 		if bytes.Equal(n.id, d.config.LocalID) {
 			d.storage.Set(key, value, ttl)
@@ -248,12 +250,11 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		rid := pseudorandomID()
 		req := eventStoreRequest(buf, rid, d.config.LocalID, v)
 
-		// select the next listener to send our request
-		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-			n.address,
-			rid,
-			req,
-			func(event *protocol.Event, err error) {
+		reqs[i] = dhtreq{
+			to:   n.address,
+			id:   rid,
+			data: req,
+			cb: func(event *protocol.Event, err error) {
 				// TODO : we call the user provided callback as soon as there's an error
 				// ideally, we should consider the store a success if a minimum number of
 				// nodes successfully managed to store the value
@@ -268,13 +269,15 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 					callback(nil)
 				}
 			},
-		)
-
-		if err != nil {
-			// if we fail to write to the socket, send the error to the callback immediately
-			callback(err)
-			return
 		}
+	}
+
+	// select the next listener to send our request
+	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+	if err != nil {
+		// if we fail to write to the socket, send the error to the callback immediately
+		callback(err)
+		return
 	}
 }
 
@@ -305,8 +308,10 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	j := newJourney(d.config.LocalID, key, K)
 	j.add(ns)
 
+	reqs := make([]dhtreq, 3)
+
 	// try lookup to best 3 nodes
-	for _, n := range j.next(3) {
+	for i, n := range j.next(3) {
 		// get a spare buffer to generate our requests with
 		buf := d.pool.Get().(*flatbuffers.Builder)
 		defer d.pool.Put(buf)
@@ -316,18 +321,20 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 		// select the next listener to send our request
-		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-			n.address,
-			rid,
-			req,
-			d.findValueCallback(n.id, key, callback, j),
-		)
-
-		if err != nil {
-			// if we fail to write to the socket, send the error to the callback immediately
-			callback(nil, err)
-			return
+		reqs[i] = dhtreq{
+			to:   n.address,
+			id:   rid,
+			data: req,
+			cb:   d.findValueCallback(n.id, key, callback, j),
 		}
+
+	}
+
+	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+	if err != nil {
+		// if we fail to write to the socket, send the error to the callback immediately
+		callback(nil, err)
+		return
 	}
 }
 
@@ -434,32 +441,37 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 		}
 
 		// the key wasn't found, so send a request to the next node
-		// get a spare buffer to generate our requests with
-		buf := d.pool.Get().(*flatbuffers.Builder)
-		defer d.pool.Put(buf)
 
-		for _, n := range ns {
+		reqs := make([]dhtreq, len(ns))
+
+		for i, n := range ns {
+			// get a spare buffer to generate our requests with
+			buf := d.pool.Get().(*flatbuffers.Builder)
+			defer d.pool.Put(buf)
+
 			// generate a new random request ID
 			rid := pseudorandomID()
 			req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
 
 			// select the next listener to send our request
-			err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-				n.address,
-				rid,
-				req,
-				d.findValueCallback(n.id, key, callback, j),
-			)
+			reqs[i] = dhtreq{
+				to:   n.address,
+				id:   rid,
+				data: req,
+				cb:   d.findValueCallback(n.id, key, callback, j),
+			}
+		}
 
-			if err != nil {
-				// if we fail to write to the socket, send the error to the callback immediately
-				if j.finish(false) {
-					callback(nil, err)
-					return
-				}
+		err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+		if err != nil {
+			// if we fail to write to the socket, send the error to the callback immediately
+			if j.finish(false) {
+				callback(nil, err)
+				return
 			}
 		}
 	}
+
 }
 
 func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
@@ -467,28 +479,31 @@ func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
 	// node as we don't know it's id yet
 	j := newJourney(d.config.LocalID, target, K)
 
-	// get a spare buffer to generate our requests with
-	buf := d.pool.Get().(*flatbuffers.Builder)
-	defer d.pool.Put(buf)
+	reqs := make([]dhtreq, len(ns))
 
-	for _, n := range ns {
+	for i, n := range ns {
+		// get a spare buffer to generate our requests with
+		buf := d.pool.Get().(*flatbuffers.Builder)
+		defer d.pool.Put(buf)
+
 		// generate a new random request ID and event
 		rid := pseudorandomID()
 		req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
 		// select the next listener to send our request
-		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-			n.address,
-			rid,
-			req,
-			d.findNodeCallback(target, callback, j),
-		)
-
-		if err != nil {
-			// if we fail to write to the socket, send the error to the callback immediately
-			callback(err)
-			return
+		reqs[i] = dhtreq{
+			to:   n.address,
+			id:   rid,
+			data: req,
+			cb:   d.findNodeCallback(target, callback, j),
 		}
+	}
+
+	err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+	if err != nil {
+		// if we fail to write to the socket, send the error to the callback immediately
+		callback(err)
+		return
 	}
 }
 
@@ -552,27 +567,30 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			return
 		}
 
-		buf := d.pool.Get().(*flatbuffers.Builder)
-		defer d.pool.Put(buf)
+		reqs := make([]dhtreq, len(ns))
 
-		for _, n := range ns {
+		for i, n := range ns {
+			buf := d.pool.Get().(*flatbuffers.Builder)
+			defer d.pool.Put(buf)
+
 			// generate a new random request ID and event
 			rid := pseudorandomID()
 			req := eventFindNodeRequest(buf, rid, d.config.LocalID, target)
 
 			// select the next listener to send our request
-			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-				n.address,
-				rid,
-				req,
-				d.findNodeCallback(target, callback, j),
-			)
-
-			if err != nil {
-				// if we fail to write to the socket, send the error to the callback immediately
-				callback(err)
-				return
+			reqs[i] = dhtreq{
+				to:   n.address,
+				id:   rid,
+				data: req,
+				cb:   d.findNodeCallback(target, callback, j),
 			}
+		}
+
+		err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+		if err != nil {
+			// if we fail to write to the socket, send the error to the callback immediately
+			callback(err)
+			return
 		}
 	}
 }
@@ -596,18 +614,22 @@ func (d *DHT) monitor() {
 			})
 		}
 
-		buf := d.pool.Get().(*flatbuffers.Builder)
+		reqs := make([]dhtreq, len(nodes))
+		bufs := make([]*flatbuffers.Builder, len(nodes))
 
-		for _, n := range nodes {
+		for i, n := range nodes {
+			buf := d.pool.Get().(*flatbuffers.Builder)
+			bufs[i] = buf
+
 			// send a ping to each node to see if it's still alive
 			rid := pseudorandomID()
 			req := eventPing(buf, rid, d.config.LocalID)
 
-			err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
-				n.address,
-				rid,
-				req,
-				func(event *protocol.Event, err error) {
+			reqs[i] = dhtreq{
+				to:   n.address,
+				id:   rid,
+				data: req,
+				cb: func(event *protocol.Event, err error) {
 					if err != nil {
 						if errors.Is(err, ErrRequestTimeout) {
 							d.routing.remove(n.id)
@@ -618,16 +640,19 @@ func (d *DHT) monitor() {
 						d.routing.seen(n.id)
 					}
 				},
-			)
-
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					return
-				}
 			}
 		}
 
-		d.pool.Put(buf)
+		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(reqs)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+		}
+
+		for i := range bufs {
+			d.pool.Put(bufs[i])
+		}
 	}
 }
 

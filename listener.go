@@ -238,12 +238,12 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 				rid := pseudorandomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+				err := l.request([]dhtreq{{to: to, id: rid, data: req, cb: func(ev *protocol.Event, err error) {
 					if err != nil {
 						// just log this error for now, but it might be best to attempt to resend?
 						log.Println(err)
 					}
-				})
+				}}})
 
 				if err != nil {
 					// log error and stop sending
@@ -273,12 +273,12 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 		rid := pseudorandomID()
 		req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+		err := l.request([]dhtreq{{to: to, id: rid, data: req, cb: func(ev *protocol.Event, err error) {
 			if err != nil {
 				// just log this error for now, but it might be best to attempt to resend?
 				log.Println(err)
 			}
-		})
+		}}})
 
 		if err != nil {
 			// log error and stop sending
@@ -287,11 +287,49 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 	}
 }
 
-func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(event *protocol.Event, err error)) error {
-	// register the callback for this request
-	l.cache.set(id, time.Now().Add(l.timeout), cb)
+type dhtreq struct {
+	to   *net.UDPAddr
+	id   []byte
+	data []byte
+	cb   func(event *protocol.Event, err error)
+}
 
-	return l.write(to, id, data)
+func (l *listener) request(reqs []dhtreq) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for i := range reqs {
+		req := reqs[i]
+
+		// register the callback for this request
+		l.cache.set(req.id, time.Now().Add(l.timeout), req.cb)
+
+		p := l.packet.fragment(req.id, req.data)
+		defer l.packet.done(p)
+
+		f := p.next()
+
+		for f != nil {
+			l.writeBatch[l.writeBatchSize].Addr = req.to
+			// set the len of the buffer without allocating a new buffer
+			l.writeBatch[l.writeBatchSize].Buffers[0] = l.writeBatch[l.writeBatchSize].Buffers[0][:len(f)]
+			// copy the data from the fragment buffer into the message buffer
+			copy(l.writeBatch[l.writeBatchSize].Buffers[0], f)
+
+			l.writeBatchSize++
+
+			if l.writeBatchSize >= len(l.writeBatch) {
+				err := l.flush(false)
+				if err != nil {
+					return err
+				}
+			}
+
+			f = p.next()
+		}
+	}
+
+	return nil
 }
 
 func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
