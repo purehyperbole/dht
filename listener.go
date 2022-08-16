@@ -160,7 +160,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	for i := 0; i < s.ValuesLength(); i++ {
 		v := new(protocol.Value)
 		if s.Values(v, i) {
-			l.storage.Set(v.KeyBytes(), v.ValueBytes(), time.Duration(v.Ttl()))
+			l.storage.Set(v.KeyBytes(), v.ValueBytes(), time.Unix(v.Created(), 0), time.Duration(v.Ttl()))
 		}
 	}
 
@@ -198,15 +198,13 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindValue)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	v, ok := l.storage.Get(f.KeyBytes())
-
 	var resp []byte
 
-	// TODO : clean this up
+	vs, ok := l.storage.Get(f.KeyBytes(), time.Unix(f.From(), 0))
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
-		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, v.Value)
+		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, vs)
 	} else {
 		// we didn't find the key, so we find the K closest neighbours to the given target
 		nodes := l.routing.closestN(f.KeyBytes(), K)
@@ -257,10 +255,10 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 			}
 
 			// add the remaining value to the array
-			// for the next packet. 42 is the overhead
+			// for the next packet. 50 is the overhead
 			// of the data in the value table
 			values = append(values, value)
-			size = size + len(value.Key) + len(value.Value) + 42
+			size = size + len(value.Key) + len(value.Value) + 50
 
 			return true
 		}

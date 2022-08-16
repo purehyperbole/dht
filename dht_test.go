@@ -57,7 +57,7 @@ func newTestStorage(scb func(value *Value)) *testStorage {
 }
 
 // Get gets a key by its id
-func (s *testStorage) Get(k []byte) (*Value, bool) {
+func (s *testStorage) Get(k []byte, from time.Time) ([]*Value, bool) {
 	s.mu.Lock()
 
 	s.hasher.Reset()
@@ -71,11 +71,11 @@ func (s *testStorage) Get(k []byte) (*Value, bool) {
 		return nil, false
 	}
 
-	return v.(*Value), ok
+	return []*Value{v.(*Value)}, ok
 }
 
 // Set sets a key value pair for a given ttl
-func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
+func (s *testStorage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	kc := make([]byte, len(k))
 	copy(kc, k)
 
@@ -94,6 +94,7 @@ func (s *testStorage) Set(k, v []byte, ttl time.Duration) bool {
 		Key:     kc,
 		Value:   vc,
 		TTL:     ttl,
+		Created: created,
 		expires: time.Now().Add(ttl),
 	}
 
@@ -181,6 +182,59 @@ func TestDHTLocalStoreFind(t *testing.T) {
 	assert.Equal(t, value, rv)
 }
 
+func TestDHTLocalStoreFindMultiple(t *testing.T) {
+	c := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+	}
+
+	// create a new dht with no nodes
+	dht, err := New(c)
+	require.Nil(t, err)
+	defer dht.Close()
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// create a channel to handle our callback in a blocking way
+	ch := make(chan error, 1)
+
+	// attempt to store some values to the same key
+	key := randomID()
+
+	values := make([][]byte, 10)
+
+	for i := 0; i < len(values); i++ {
+		values[i] = randomID()
+
+		dht.Store(key, values[i], time.Hour, func(err error) {
+			ch <- err
+		})
+
+		require.Nil(t, <-ch)
+	}
+
+	type resp struct {
+		data []byte
+		err  error
+	}
+
+	// create a channel for our query responses
+	ch2 := make(chan resp, 10)
+
+	dht.Find(key, func(v []byte, err error) {
+		rv := make([]byte, len(v))
+		copy(rv, v)
+		ch2 <- resp{data: rv, err: err}
+	})
+
+	for i := 0; i < len(values); i++ {
+		r := <-ch2
+		require.Nil(t, r.err)
+		assert.Equal(t, values[i], r.data)
+	}
+}
+
 func TestDHTClusterStoreFind(t *testing.T) {
 	bc := &Config{
 		LocalID:       randomID(),
@@ -235,6 +289,160 @@ func TestDHTClusterStoreFind(t *testing.T) {
 
 	require.Nil(t, <-ch)
 	assert.Equal(t, value, rv)
+}
+
+func TestDHTClusterStoreFindMultiple(t *testing.T) {
+	bc := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+	}
+
+	// create a new bootstrap node
+	bdht, err := New(bc)
+	require.Nil(t, err)
+	defer bdht.Close()
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// add some nodes to the network
+	for i := 0; i < 2; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
+			BootstrapAddresses: []string{
+				bc.ListenAddress,
+			},
+			Listeners: 1,
+		}
+
+		dht, err := New(c)
+		require.Nil(t, err)
+		defer dht.Close()
+	}
+
+	// create a channel to handle our callback in a blocking way
+	ch := make(chan error, 1)
+
+	// attempt to store some values to the same key
+	key := randomID()
+
+	values := make([][]byte, 10)
+
+	for i := 0; i < len(values); i++ {
+		values[i] = randomID()
+
+		bdht.Store(key, values[i], time.Hour, func(err error) {
+			ch <- err
+		})
+
+		require.Nil(t, <-ch)
+	}
+
+	type resp struct {
+		data []byte
+		err  error
+	}
+
+	// create a channel for our query responses
+	ch2 := make(chan resp, 10)
+
+	bdht.Find(key, func(v []byte, err error) {
+		rv := make([]byte, len(v))
+		copy(rv, v)
+		ch2 <- resp{data: rv, err: err}
+	})
+
+	for i := 0; i < len(values); i++ {
+		r := <-ch2
+		require.Nil(t, r.err)
+		assert.Equal(t, values[i], r.data)
+	}
+}
+
+func TestDHTClusterStoreFindFromTimestamp(t *testing.T) {
+	bc := &Config{
+		LocalID:       randomID(),
+		ListenAddress: "127.0.0.1:9000",
+		Listeners:     1,
+	}
+
+	// create a new bootstrap node
+	bdht, err := New(bc)
+	require.Nil(t, err)
+	defer bdht.Close()
+
+	// wait some time for the listeners to start
+	time.Sleep(time.Millisecond * 200)
+
+	// add some nodes to the network
+	for i := 0; i < 20; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
+			BootstrapAddresses: []string{
+				bc.ListenAddress,
+			},
+			Listeners: 1,
+		}
+
+		dht, err := New(c)
+		require.Nil(t, err)
+		defer dht.Close()
+	}
+
+	key := randomID()
+	values := make([][]byte, 10)
+
+	// create a channel to handle our callback in a blocking way
+	ch := make(chan error, 1)
+
+	for i := 0; i < 10; i++ {
+		values[i] = randomID()
+
+		bdht.Store(key, values[i], time.Hour, func(err error) {
+			ch <- err
+		})
+
+		require.Nil(t, <-ch)
+	}
+
+	// wait for 1 second, as that's the smallest granularity we can query with (unix seconds)
+	time.Sleep(time.Second)
+
+	var result []byte
+
+	from := time.Now()
+	value := randomID()
+
+	// find a value after we created the others
+	bdht.Find(key, func(v []byte, err error) {
+		result = make([]byte, len(v))
+		copy(result, v)
+		ch <- err
+	}, ValuesFrom(from))
+
+	// expect not found
+	require.NotNil(t, <-ch)
+	assert.Len(t, result, 0)
+
+	// create a new value
+	bdht.Store(key, value, time.Hour, func(err error) {
+		ch <- err
+	})
+
+	require.Nil(t, <-ch)
+
+	bdht.Find(key, func(v []byte, err error) {
+		result = make([]byte, len(v))
+		copy(result, v)
+		ch <- err
+	}, ValuesFrom(from))
+
+	// expect not found
+	// expect found
+	require.Nil(t, <-ch)
+	assert.Equal(t, value, result)
 }
 
 func TestDHTClusterStoreFindNonExistent(t *testing.T) {

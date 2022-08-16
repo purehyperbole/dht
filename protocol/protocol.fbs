@@ -6,9 +6,10 @@ table Node {
 }
 
 table Value {
-  key:   [ubyte];
-  value: [ubyte];
-  ttl:   long;
+  key:     [ubyte];
+  value:   [ubyte];
+  ttl:     long;
+  created: long;
 }
 
 table FindNode {
@@ -18,8 +19,9 @@ table FindNode {
 
 table FindValue {
   key:    [ubyte];
-  value:  [ubyte];
+  values: [Value];
   nodes:  [Node];
+  from:   long;
 }
 
 table Store {

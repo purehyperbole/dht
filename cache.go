@@ -22,24 +22,21 @@ type request struct {
 
 // cache tracks asynchronous event requests
 type cache struct {
-	// TODO: take another look at sync.Map, check if memory usage/GC has improved
-	requests map[uint64]*request
-	hasher   maphash.Hash
-	seed     maphash.Seed
-	mu       sync.Mutex
+	requests sync.Map
+	hasher   sync.Pool
 }
 
 func newCache(refresh time.Duration) *cache {
-	var hasher maphash.Hash
-
 	seed := maphash.MakeSeed()
 
-	hasher.SetSeed(seed)
-
 	c := &cache{
-		requests: make(map[uint64]*request),
-		hasher:   hasher,
-		seed:     seed,
+		hasher: sync.Pool{
+			New: func() any {
+				var hasher maphash.Hash
+				hasher.SetSeed(seed)
+				return &hasher
+			},
+		},
 	}
 
 	go c.cleanup(refresh)
@@ -50,32 +47,33 @@ func newCache(refresh time.Duration) *cache {
 func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error)) {
 	r := &request{callback: cb, ttl: ttl}
 
-	c.mu.Lock()
+	h := c.hasher.Get().(*maphash.Hash)
 
-	c.hasher.Reset()
-	c.hasher.Write(key)
+	h.Reset()
+	h.Write(key)
 
-	c.requests[c.hasher.Sum64()] = r
+	k := h.Sum64()
 
-	c.mu.Unlock()
+	c.hasher.Put(h)
+
+	c.requests.Store(k, r)
 }
 
 func (c *cache) pop(key []byte) (func(*protocol.Event, error), bool) {
-	c.mu.Lock()
+	h := c.hasher.Get().(*maphash.Hash)
 
-	c.hasher.Reset()
-	c.hasher.Write(key)
+	h.Reset()
+	h.Write(key)
 
-	k := c.hasher.Sum64()
+	k := h.Sum64()
 
-	r, ok := c.requests[k]
+	c.hasher.Put(h)
+
+	r, ok := c.requests.Load(k)
 	if ok {
-		delete(c.requests, k)
-		c.mu.Unlock()
-		return r.callback, ok
+		c.requests.Delete(k)
+		return r.(*request).callback, ok
 	}
-
-	c.mu.Unlock()
 
 	return nil, false
 }
@@ -87,15 +85,15 @@ func (c *cache) cleanup(refresh time.Duration) {
 
 		now := time.Now()
 
-		c.mu.Lock()
+		c.requests.Range(func(key, value any) bool {
+			v := value.(*request)
 
-		for k, v := range c.requests {
 			if now.After(v.ttl) {
 				v.callback(nil, ErrRequestTimeout)
-				delete(c.requests, k)
+				c.requests.Delete(key)
 			}
-		}
 
-		c.mu.Unlock()
+			return true
+		})
 	}
 }
