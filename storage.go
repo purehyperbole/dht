@@ -110,11 +110,17 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	copy(vc, v)
 
 	h := s.hasher.Get().(*maphash.Hash)
-	defer s.hasher.Put(h)
 
 	h.Reset()
 	h.Write(k)
 	key := h.Sum64()
+
+	// hash the value so we can check if we have stored it already
+	h.Reset()
+	h.Write(v)
+	vh := h.Sum64()
+
+	s.hasher.Put(h)
 
 	value := &Value{
 		Key:     kc,
@@ -125,18 +131,13 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	}
 
 	actual, ok := s.store.LoadOrStore(key, &item{
-		contains: map[uint64]struct{}{key: {}},
+		contains: map[uint64]struct{}{vh: {}},
 		values:   []*Value{value},
 	})
 
 	if !ok {
 		return true
 	}
-
-	// hash the value so we can check if we have stored it already
-	h.Reset()
-	h.Write(v)
-	vh := h.Sum64()
 
 	existing := actual.(*item)
 
@@ -149,6 +150,7 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	}
 
 	// TODO this will be really slow, but good enough for now
+	existing.contains[vh] = struct{}{}
 	existing.values = append(existing.values, value)
 
 	return true
