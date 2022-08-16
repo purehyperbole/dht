@@ -22,6 +22,12 @@ type Value struct {
 	expires time.Time
 }
 
+type item struct {
+	contains map[uint64]struct{}
+	values   []*Value
+	mu       sync.Mutex
+}
+
 // implement simple storage for now storage
 type storage struct {
 	store  sync.Map
@@ -65,7 +71,7 @@ func (s *storage) Get(k []byte) ([]*Value, bool) {
 	}
 
 	// TODO : actually store and return multiple values
-	return []*Value{v.(*Value)}, true
+	return v.(*item).values, true
 }
 
 // Set sets a key value pair for a given ttl
@@ -82,19 +88,45 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 	copy(vc, v)
 
 	h := s.hasher.Get().(*maphash.Hash)
+	defer s.hasher.Put(h)
 
 	h.Reset()
 	h.Write(k)
 	key := h.Sum64()
 
-	s.hasher.Put(h)
-
-	s.store.Store(key, &Value{
+	value := &Value{
 		Key:     kc,
 		Value:   vc,
 		TTL:     ttl,
 		expires: time.Now().Add(ttl),
+	}
+
+	actual, ok := s.store.LoadOrStore(key, &item{
+		contains: map[uint64]struct{}{key: {}},
+		values:   []*Value{value},
 	})
+
+	if !ok {
+		return true
+	}
+
+	// hash the value so we can check if we have stored it already
+	h.Reset()
+	h.Write(v)
+	vh := h.Sum64()
+
+	existing := actual.(*item)
+
+	existing.mu.Lock()
+	defer existing.mu.Unlock()
+
+	_, ok = existing.contains[vh]
+	if ok {
+		return true
+	}
+
+	// TODO this will be really slow, but good enough for now
+	existing.values = append(existing.values, value)
 
 	return true
 }
@@ -102,7 +134,19 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 // Iterate iterates over keys in the storage
 func (s *storage) Iterate(cb func(v *Value) bool) {
 	s.store.Range(func(ky any, vl any) bool {
-		return cb(vl.(*Value))
+		item := vl.(*item)
+
+		item.mu.Lock()
+
+		for i := range item.values {
+			if !cb(item.values[i]) {
+				return false
+			}
+		}
+
+		item.mu.Unlock()
+
+		return true
 	})
 }
 
@@ -114,10 +158,17 @@ func (s *storage) cleanup() {
 		now := time.Now()
 
 		s.store.Range(func(ky any, vl any) bool {
-			val := vl.(*Value)
-			if val.expires.After(now) {
-				s.store.Delete(ky)
+			item := vl.(*item)
+			item.mu.Lock()
+
+			for i := range item.values {
+				if item.values[i].expires.After(now) {
+					s.store.Delete(ky)
+				}
 			}
+
+			item.mu.Unlock()
+
 			return true
 		})
 	}
