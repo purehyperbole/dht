@@ -255,10 +255,10 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 			}
 
 			// add the remaining value to the array
-			// for the next packet. 42 is the overhead
+			// for the next packet. 50 is the overhead
 			// of the data in the value table
 			values = append(values, value)
-			size = size + len(value.Key) + len(value.Value) + 42
+			size = size + len(value.Key) + len(value.Value) + 50
 
 			return true
 		}
