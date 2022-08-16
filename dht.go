@@ -287,9 +287,11 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 	}
 
 	// we should check our own cache first before sending a request
-	v, ok := d.storage.Get(key)
+	vs, ok := d.storage.Get(key)
 	if ok {
-		callback(v.Value, nil)
+		for i := range vs {
+			callback(vs[i].Value, nil)
+		}
 		return
 	}
 
@@ -381,9 +383,18 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
-		if f.ValueLength() > 0 {
+		if f.ValuesLength() > 0 {
 			if j.finish(true) {
-				callback(f.ValueBytes(), nil)
+				for i := 0; i < f.ValuesLength(); i++ {
+					vd := new(protocol.Value)
+
+					if !f.Values(vd, i) {
+						callback(nil, errors.New("bad find value data"))
+						return
+					}
+
+					callback(vd.ValueBytes(), nil)
+				}
 			}
 			return
 		} else if f.NodesLength() < 1 {

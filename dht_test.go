@@ -57,7 +57,7 @@ func newTestStorage(scb func(value *Value)) *testStorage {
 }
 
 // Get gets a key by its id
-func (s *testStorage) Get(k []byte) (*Value, bool) {
+func (s *testStorage) Get(k []byte) ([]*Value, bool) {
 	s.mu.Lock()
 
 	s.hasher.Reset()
@@ -71,7 +71,7 @@ func (s *testStorage) Get(k []byte) (*Value, bool) {
 		return nil, false
 	}
 
-	return v.(*Value), ok
+	return []*Value{v.(*Value)}, ok
 }
 
 // Set sets a key value pair for a given ttl

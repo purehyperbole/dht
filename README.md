@@ -119,6 +119,7 @@ $ go test -v -bench=.
 
 ## Implemented
 - [x] routing
+- [x] storage (custom)
 - [x] storage (in-memory)
 - [x] ping
 - [x] store
@@ -129,12 +130,13 @@ $ go test -v -bench=.
 - [x] user defined storage
 - [x] multiple values per store request
 - [x] handles packets larger than MTU
+- [x] multiple values per key
+- [x] batch socket reads and writes
 - [ ] peer refresh
 - [ ] key refresh
 - [ ] latency based route selection
 
 ## Future Improvements
-- [ ] multiple values per key
 - [ ] io_uring socket handler
 - [ ] storage (persistent)
 - [ ] NAT traversal

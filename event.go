@@ -222,13 +222,34 @@ func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte) []b
 	return buf.FinishedBytes()
 }
 
-func eventFindValueFoundResponse(buf *flatbuffers.Builder, id, sender, value []byte) []byte {
+func eventFindValueFoundResponse(buf *flatbuffers.Builder, id, sender []byte, values []*Value) []byte {
 	buf.Reset()
 
-	v := buf.CreateByteVector(value)
+	// construct the value vector
+	vs := make([]flatbuffers.UOffsetT, len(values))
+
+	for i, value := range values {
+		k := buf.CreateByteVector(value.Key)
+		v := buf.CreateByteVector(value.Value)
+
+		protocol.ValueStart(buf)
+		protocol.ValueAddKey(buf, k)
+		protocol.ValueAddValue(buf, v)
+		protocol.ValueAddTtl(buf, int64(value.TTL))
+		vs[i] = protocol.ValueEnd(buf)
+	}
+
+	protocol.FindValueStartValuesVector(buf, len(values))
+
+	// prepend nodes to vector in reverse order
+	for i := len(values) - 1; i >= 0; i-- {
+		buf.PrependUOffsetT(vs[i])
+	}
+
+	vv := buf.EndVector(len(values))
 
 	protocol.FindValueStart(buf)
-	protocol.FindValueAddValue(buf, v)
+	protocol.FindValueAddValues(buf, vv)
 	fv := protocol.FindValueEnd(buf)
 
 	// construct the response event table

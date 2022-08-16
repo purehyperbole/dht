@@ -198,15 +198,13 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindValue)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	v, ok := l.storage.Get(f.KeyBytes())
-
 	var resp []byte
 
-	// TODO : clean this up
+	vs, ok := l.storage.Get(f.KeyBytes())
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
-		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, v.Value)
+		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, vs)
 	} else {
 		// we didn't find the key, so we find the K closest neighbours to the given target
 		nodes := l.routing.closestN(f.KeyBytes(), K)

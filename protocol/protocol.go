@@ -277,8 +277,20 @@ func (rcv *Value) MutateTtl(n int64) bool {
 	return rcv._tab.MutateInt64Slot(8, n)
 }
 
+func (rcv *Value) Created() int64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *Value) MutateCreated(n int64) bool {
+	return rcv._tab.MutateInt64Slot(10, n)
+}
+
 func ValueStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(4)
 }
 func ValueAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(key), 0)
@@ -294,6 +306,9 @@ func ValueStartValueVector(builder *flatbuffers.Builder, numElems int) flatbuffe
 }
 func ValueAddTtl(builder *flatbuffers.Builder, ttl int64) {
 	builder.PrependInt64Slot(2, ttl, 0)
+}
+func ValueAddCreated(builder *flatbuffers.Builder, created int64) {
+	builder.PrependInt64Slot(3, created, 0)
 }
 func ValueEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
@@ -444,38 +459,24 @@ func (rcv *FindValue) MutateKey(j int, n byte) bool {
 	return false
 }
 
-func (rcv *FindValue) Value(j int) byte {
+func (rcv *FindValue) Values(obj *Value, j int) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
+		x := rcv._tab.Vector(o)
+		x += flatbuffers.UOffsetT(j) * 4
+		x = rcv._tab.Indirect(x)
+		obj.Init(rcv._tab.Bytes, x)
+		return true
 	}
-	return 0
+	return false
 }
 
-func (rcv *FindValue) ValueLength() int {
+func (rcv *FindValue) ValuesLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
 	return 0
-}
-
-func (rcv *FindValue) ValueBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
-func (rcv *FindValue) MutateValue(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
-	}
-	return false
 }
 
 func (rcv *FindValue) Nodes(obj *Node, j int) bool {
@@ -498,8 +499,20 @@ func (rcv *FindValue) NodesLength() int {
 	return 0
 }
 
+func (rcv *FindValue) From() int64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *FindValue) MutateFrom(n int64) bool {
+	return rcv._tab.MutateInt64Slot(10, n)
+}
+
 func FindValueStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(4)
 }
 func FindValueAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(key), 0)
@@ -507,17 +520,20 @@ func FindValueAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
 func FindValueStartKeyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
 }
-func FindValueAddValue(builder *flatbuffers.Builder, value flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(value), 0)
+func FindValueAddValues(builder *flatbuffers.Builder, values flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(values), 0)
 }
-func FindValueStartValueVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
-	return builder.StartVector(1, numElems, 1)
+func FindValueStartValuesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(4, numElems, 4)
 }
 func FindValueAddNodes(builder *flatbuffers.Builder, nodes flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(nodes), 0)
 }
 func FindValueStartNodesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
+}
+func FindValueAddFrom(builder *flatbuffers.Builder, from int64) {
+	builder.PrependInt64Slot(3, from, 0)
 }
 func FindValueEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

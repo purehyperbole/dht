@@ -8,7 +8,7 @@ import (
 
 // Storage defines the storage interface used by the DLT
 type Storage interface {
-	Get(key []byte) (*Value, bool)
+	Get(key []byte) ([]*Value, bool)
 	Set(key, value []byte, ttl time.Duration) bool
 	Iterate(cb func(value *Value) bool)
 }
@@ -18,31 +18,30 @@ type Value struct {
 	Key     []byte
 	Value   []byte
 	TTL     time.Duration
+	Created time.Time
 	expires time.Time
 }
 
 // implement simple storage for now storage
 type storage struct {
-	// store  map[uint64]Value
 	store  sync.Map
-	hasher maphash.Hash
-	seed   maphash.Seed
-	mu     sync.Mutex
+	hasher sync.Pool
 }
 
 func newInMemoryStorage() *storage {
 	// TODO : this will probably cause collisions
 	// that need to be handled!
-	var hasher maphash.Hash
-
 	seed := maphash.MakeSeed()
 
-	hasher.SetSeed(seed)
-
 	s := &storage{
-		store:  sync.Map{},
-		hasher: hasher,
-		seed:   seed,
+		store: sync.Map{},
+		hasher: sync.Pool{
+			New: func() any {
+				var hasher maphash.Hash
+				hasher.SetSeed(seed)
+				return &hasher
+			},
+		},
 	}
 
 	go s.cleanup()
@@ -51,21 +50,22 @@ func newInMemoryStorage() *storage {
 }
 
 // Get gets a key by its id
-func (s *storage) Get(k []byte) (*Value, bool) {
-	s.mu.Lock()
+func (s *storage) Get(k []byte) ([]*Value, bool) {
+	h := s.hasher.Get().(*maphash.Hash)
 
-	s.hasher.Reset()
-	s.hasher.Write(k)
-	key := s.hasher.Sum64()
+	h.Reset()
+	h.Write(k)
+	key := h.Sum64()
 
-	s.mu.Unlock()
+	s.hasher.Put(h)
 
 	v, ok := s.store.Load(key)
 	if !ok {
 		return nil, false
 	}
 
-	return v.(*Value), true
+	// TODO : actually store and return multiple values
+	return []*Value{v.(*Value)}, true
 }
 
 // Set sets a key value pair for a given ttl
@@ -81,13 +81,13 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 	vc := make([]byte, len(v))
 	copy(vc, v)
 
-	s.mu.Lock()
+	h := s.hasher.Get().(*maphash.Hash)
 
-	s.hasher.Reset()
-	s.hasher.Write(kc)
-	key := s.hasher.Sum64()
+	h.Reset()
+	h.Write(k)
+	key := h.Sum64()
 
-	s.mu.Unlock()
+	s.hasher.Put(h)
 
 	s.store.Store(key, &Value{
 		Key:     kc,
