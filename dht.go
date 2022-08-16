@@ -206,11 +206,15 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 		return
 	}
 
+	// TODO  use NTP time for this?
+	created := time.Now()
+
 	v := []*Value{
 		{
-			Key:   key,
-			Value: value,
-			TTL:   ttl,
+			Key:     key,
+			Value:   value,
+			TTL:     ttl,
+			Created: created,
 		},
 	}
 
@@ -233,7 +237,7 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	for _, n := range ns {
 		// shortcut the request if its to the local node
 		if bytes.Equal(n.id, d.config.LocalID) {
-			d.storage.Set(key, value, ttl)
+			d.storage.Set(key, value, created, ttl)
 
 			if len(ns) == 1 {
 				// we're the only node, so call the callback immediately
@@ -278,16 +282,23 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 	}
 }
 
-// Find finds a value on the network if it exists. Any returned value will not be safe to
-// use outside of the callback, so you should copy it if its needed elsewhere
-func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
+// Find finds a value on the network if it exists. If the key being queried has multiple values, the callback will be invoked for each result
+// Any returned value will not be safe to use outside of the callback, so you should copy it if its needed elsewhere
+func (d *DHT) Find(key []byte, callback func(value []byte, err error), opts ...*FindOption) {
 	if len(key) != KEY_BYTES {
 		callback(nil, errors.New("key must be 20 bytes in length"))
 		return
 	}
 
+	var from time.Time
+
+	// TODO do this properly...
+	if len(opts) > 0 {
+		from = opts[0].from
+	}
+
 	// we should check our own cache first before sending a request
-	vs, ok := d.storage.Get(key)
+	vs, ok := d.storage.Get(key, from)
 	if ok {
 		for i := range vs {
 			callback(vs[i].Value, nil)
@@ -315,14 +326,14 @@ func (d *DHT) Find(key []byte, callback func(value []byte, err error)) {
 
 		// generate a new random request ID
 		rid := pseudorandomID()
-		req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
+		req := eventFindValueRequest(buf, rid, d.config.LocalID, key, from)
 
 		// select the next listener to send our request
 		err := d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 			n.address,
 			rid,
 			req,
-			d.findValueCallback(n.id, key, callback, j),
+			d.findValueCallback(n.id, key, from, callback, j),
 		)
 
 		if err != nil {
@@ -347,7 +358,7 @@ func (d *DHT) Close() error {
 
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
-func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
+func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
 	return func(event *protocol.Event, err error) {
 		if err != nil {
 			if errors.Is(err, ErrRequestTimeout) {
@@ -384,6 +395,8 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
 		if f.ValuesLength() > 0 {
+			// TODO : we should wait for other responses to come back and invoke callback for other values;
+			// we should use the journey to track what values have been sent to the caller to prevent duplicates
 			if j.finish(true) {
 				for i := 0; i < f.ValuesLength(); i++ {
 					vd := new(protocol.Value)
@@ -452,14 +465,14 @@ func (d *DHT) findValueCallback(id, key []byte, callback func(value []byte, err 
 		for _, n := range ns {
 			// generate a new random request ID
 			rid := pseudorandomID()
-			req := eventFindValueRequest(buf, rid, d.config.LocalID, key)
+			req := eventFindValueRequest(buf, rid, d.config.LocalID, key, from)
 
 			// select the next listener to send our request
 			err = d.listeners[(atomic.AddInt32(&d.cl, 1)-1)%int32(len(d.listeners))].request(
 				n.address,
 				rid,
 				req,
-				d.findValueCallback(n.id, key, callback, j),
+				d.findValueCallback(n.id, key, from, callback, j),
 			)
 
 			if err != nil {

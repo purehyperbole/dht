@@ -2,6 +2,7 @@ package dht
 
 import (
 	"encoding/binary"
+	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/purehyperbole/dht/protocol"
@@ -58,6 +59,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Va
 		protocol.ValueStart(buf)
 		protocol.ValueAddKey(buf, k)
 		protocol.ValueAddValue(buf, v)
+		protocol.ValueAddCreated(buf, value.Created.Unix())
 		protocol.ValueAddTtl(buf, int64(value.TTL))
 		vs[i] = protocol.ValueEnd(buf)
 	}
@@ -194,7 +196,7 @@ func eventFindNodeResponse(buf *flatbuffers.Builder, id, sender []byte, nodes []
 	return buf.FinishedBytes()
 }
 
-func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte) []byte {
+func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte, from time.Time) []byte {
 	buf.Reset()
 
 	// create the find value table
@@ -202,6 +204,7 @@ func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte) []b
 
 	protocol.FindValueStart(buf)
 	protocol.FindValueAddKey(buf, k)
+	protocol.FindValueAddFrom(buf, from.Unix())
 	fv := protocol.FindValueEnd(buf)
 
 	// build the event to send

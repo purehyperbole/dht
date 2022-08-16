@@ -8,8 +8,8 @@ import (
 
 // Storage defines the storage interface used by the DLT
 type Storage interface {
-	Get(key []byte) ([]*Value, bool)
-	Set(key, value []byte, ttl time.Duration) bool
+	Get(key []byte, from time.Time) ([]*Value, bool)
+	Set(key, value []byte, created time.Time, ttl time.Duration) bool
 	Iterate(cb func(value *Value) bool)
 }
 
@@ -56,7 +56,7 @@ func newInMemoryStorage() *storage {
 }
 
 // Get gets a key by its id
-func (s *storage) Get(k []byte) ([]*Value, bool) {
+func (s *storage) Get(k []byte, from time.Time) ([]*Value, bool) {
 	h := s.hasher.Get().(*maphash.Hash)
 
 	h.Reset()
@@ -70,12 +70,34 @@ func (s *storage) Get(k []byte) ([]*Value, bool) {
 		return nil, false
 	}
 
+	it := v.(*item)
+
+	// if we don't need to filter the query, then return all values
+	if from.IsZero() {
+		return v.(*item).values, true
+	}
+
+	var index int
+
+	// filter the query to values after a given date
+	for i := 0; i < len(it.values); i++ {
+		if it.values[i].Created.Before(from) {
+			// TODO : might be a bit wonky if created from timestamps are not in order
+			index++
+		}
+	}
+
+	// we have no results left that are valid for the query
+	if index >= len(it.values) {
+		return nil, false
+	}
+
 	// TODO : actually store and return multiple values
-	return v.(*item).values, true
+	return it.values[index:], true
 }
 
 // Set sets a key value pair for a given ttl
-func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
+func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	// we keep a copy of the key and value as it's actually
 	// read from a buffer that's going to be reused
 	// so we need to store this as a copy to avoid
@@ -98,6 +120,7 @@ func (s *storage) Set(k, v []byte, ttl time.Duration) bool {
 		Key:     kc,
 		Value:   vc,
 		TTL:     ttl,
+		Created: created,
 		expires: time.Now().Add(ttl),
 	}
 
