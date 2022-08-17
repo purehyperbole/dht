@@ -137,9 +137,14 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	key := h.Sum64()
 
 	// hash the value so we can check if we have stored it already
-	h.Reset()
-	h.Write(v)
-	vh := h.Sum64()
+
+	/*
+		h.Reset()
+		h.Write(v)
+		vh := h.Sum64()
+	*/
+
+	vh := uint64(0)
 
 	s.hasher.Put(h)
 
