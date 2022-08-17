@@ -22,6 +22,7 @@ table FindValue {
   values: [Value];
   nodes:  [Node];
   from:   long;
+  found:  long;
 }
 
 table Store {

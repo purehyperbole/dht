@@ -16,7 +16,7 @@ var (
 
 // a pending request
 type request struct {
-	callback func(event *protocol.Event, err error)
+	callback func(event *protocol.Event, err error) bool
 	ttl      time.Time
 }
 
@@ -44,7 +44,7 @@ func newCache(refresh time.Duration) *cache {
 	return c
 }
 
-func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error)) {
+func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error) bool) {
 	r := &request{callback: cb, ttl: ttl}
 
 	h := c.hasher.Get().(*maphash.Hash)
@@ -59,7 +59,7 @@ func (c *cache) set(key []byte, ttl time.Time, cb func(*protocol.Event, error)) 
 	c.requests.Store(k, r)
 }
 
-func (c *cache) pop(key []byte) (func(*protocol.Event, error), bool) {
+func (c *cache) callback(key []byte, event *protocol.Event, err error) {
 	h := c.hasher.Get().(*maphash.Hash)
 
 	h.Reset()
@@ -70,16 +70,16 @@ func (c *cache) pop(key []byte) (func(*protocol.Event, error), bool) {
 	c.hasher.Put(h)
 
 	r, ok := c.requests.Load(k)
-	if ok {
-		c.requests.Delete(k)
-		return r.(*request).callback, ok
+	if !ok {
+		return
 	}
 
-	return nil, false
+	if r.(*request).callback(event, err) {
+		c.requests.Delete(k)
+	}
 }
 
 func (c *cache) cleanup(refresh time.Duration) {
-	// TODO : this is going to block everything, not good
 	for {
 		time.Sleep(refresh)
 

@@ -16,6 +16,10 @@ type journey struct {
 	destination []byte
 	// a set of nodes we have already visited
 	visited map[uint64]struct{}
+	// a set of values we have already seen
+	values map[uint64]struct{}
+	// the amount of values that we are expecting back based on initial successful responses
+	outstanding map[uint64]int
 	// hasher for our list of destinations
 	hasher maphash.Hash
 	// potential routes that we can send requests to
@@ -41,6 +45,8 @@ func newJourney(source, destination []byte, iterations int) *journey {
 		source:      source,
 		destination: destination,
 		visited:     make(map[uint64]struct{}),
+		values:      make(map[uint64]struct{}),
+		outstanding: make(map[uint64]int),
 		hasher:      hasher,
 		nodes:       make([]*node, K),
 		distances:   make([]int, K),
@@ -74,8 +80,6 @@ func (j *journey) add(nodes []*node) {
 		}
 
 		j.visited[k] = struct{}{}
-
-		//fmt.Println("journey: adding", n.address.String())
 
 		// if the list isn't full, add it to the list
 		if j.routes < K {
@@ -145,8 +149,6 @@ func (j *journey) next(count int) []*node {
 	copy(j.distances, j.distances[available:])
 	j.routes = j.routes - available
 
-	// log.Println("sending nodes:", available, "inflight:", j.inflight, "iterations:", K-j.remaining, "routes:", j.routes)
-
 	return next
 }
 
@@ -155,18 +157,26 @@ func (j *journey) finish(force bool) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
+	// the amount of outstanding values we're expecting back from successful queries
+	var outstanding int
+
+	for _, v := range j.outstanding {
+		outstanding = outstanding + v
+	}
+
 	if force {
 		if j.completed {
 			return false
 		}
 	} else {
-		if j.completed || j.inflight > 0 {
+		if j.completed || j.inflight > 0 || outstanding > 0 {
 			return false
 		}
 	}
 
 	j.completed = true
 
+	// return true only to the first invoker that actually finishes the journey
 	return true
 }
 
@@ -177,17 +187,61 @@ func (j *journey) responseReceived() (bool, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	// inf := j.inflight
-
 	if j.inflight > 0 {
 		j.inflight--
 	}
 
-	// log.Println("response completed:", j.completed, "inflight (old):", inf, "inflight (new):", j.inflight, "routes:", j.routes)
-
 	// if we've exhausted all routes and we're still not completed,
 	// mark this journey as done for the next response we might receive
 	return j.completed, j.inflight < 1 && j.routes < 1
+}
+
+func (j *journey) seenValue(value []byte) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	j.hasher.Reset()
+	j.hasher.Write(value)
+	vh := j.hasher.Sum64()
+
+	_, ok := j.values[vh]
+	if ok {
+		return true
+	}
+
+	j.values[vh] = struct{}{}
+
+	return false
+}
+
+func (j *journey) addOutstanding(from []byte, outstanding int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	j.hasher.Reset()
+	j.hasher.Write(from)
+	fh := j.hasher.Sum64()
+
+	_, ok := j.outstanding[fh]
+	if ok {
+		// only return the amont of expected values from the first response
+		return
+	}
+
+	// we've seen another value, so deincrement the acount of remaining
+	// values we are expecting back
+	j.outstanding[fh] = outstanding
+}
+
+func (j *journey) removeOutstanding(from []byte, received int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	j.hasher.Reset()
+	j.hasher.Write(from)
+	fh := j.hasher.Sum64()
+
+	j.outstanding[fh] = j.outstanding[fh] - received
 }
 
 /*

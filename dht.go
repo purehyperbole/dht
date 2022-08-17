@@ -257,13 +257,13 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 			n.address,
 			rid,
 			req,
-			func(event *protocol.Event, err error) {
+			func(event *protocol.Event, err error) bool {
 				// TODO : we call the user provided callback as soon as there's an error
 				// ideally, we should consider the store a success if a minimum number of
 				// nodes successfully managed to store the value
 				if err != nil {
 					callback(err)
-					return
+					return true
 				}
 
 				if atomic.AddInt32(&r, 1) == int32(len(ns)-1) {
@@ -271,6 +271,8 @@ func (d *DHT) Store(key, value []byte, ttl time.Duration, callback func(err erro
 					// user provided callback with a success
 					callback(nil)
 				}
+
+				return true
 			},
 		)
 
@@ -358,8 +360,8 @@ func (d *DHT) Close() error {
 
 // TODO : this is all pretty garbage, refactor!
 // return the callback used to handle responses to our findValue requests, tracking the number of requests we have made
-func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) {
-	return func(event *protocol.Event, err error) {
+func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(value []byte, err error), j *journey) func(event *protocol.Event, err error) bool {
+	return func(event *protocol.Event, err error) bool {
 		if err != nil {
 			if errors.Is(err, ErrRequestTimeout) {
 				d.routing.remove(id)
@@ -370,7 +372,7 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 
 		if journeyCompleted {
 			// ignore this response, we've already received what we've needed
-			return
+			return true
 		}
 
 		// journey is completed, ignore this response
@@ -378,15 +380,16 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 			// if there's an actual error, send that to the user
 			if shouldError {
 				callback(nil, err)
+				return true
 			}
-			return
+			return false
 		}
 
 		payloadTable := new(flatbuffers.Table)
 
 		if !event.Payload(payloadTable) {
 			callback(nil, errors.New("invalid response to find value request"))
-			return
+			return false
 		}
 
 		f := new(protocol.FindValue)
@@ -395,28 +398,34 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 		// check if we received the value or if we received a list of closest
 		// neighbours that might have the key
 		if f.ValuesLength() > 0 {
-			// TODO : we should wait for other responses to come back and invoke callback for other values;
-			// we should use the journey to track what values have been sent to the caller to prevent duplicates
-			if j.finish(true) {
-				for i := 0; i < f.ValuesLength(); i++ {
-					vd := new(protocol.Value)
+			// TODO make this better
+			j.addOutstanding(event.SenderBytes(), int(f.Found()))
+			j.removeOutstanding(event.SenderBytes(), f.ValuesLength())
 
-					if !f.Values(vd, i) {
-						callback(nil, errors.New("bad find value data"))
-						return
-					}
+			for i := 0; i < f.ValuesLength(); i++ {
+				vd := new(protocol.Value)
 
+				if !f.Values(vd, i) {
+					callback(nil, errors.New("bad find value data"))
+					return false
+				}
+
+				if !j.seenValue(vd.ValueBytes()) {
 					callback(vd.ValueBytes(), nil)
 				}
 			}
-			return
+
+			// attempt to finish the journey
+			return j.finish(false)
 		} else if f.NodesLength() < 1 {
 			// mark the journey as finished so no more
 			// requests will be made
 			if j.finish(false) {
 				callback(nil, errors.New("value not found"))
+				return true
 			}
-			return
+
+			return false
 		}
 
 		// collect the new nodes from the response
@@ -427,7 +436,7 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 
 			if !f.Nodes(nd, i) {
 				callback(nil, errors.New("bad find value node data"))
-				return
+				return false
 			}
 
 			nad := &net.UDPAddr{
@@ -453,8 +462,9 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 		if ns == nil {
 			if j.finish(false) {
 				callback(nil, errors.New("value not found"))
+				return true
 			}
-			return
+			return false
 		}
 
 		// the key wasn't found, so send a request to the next node
@@ -479,10 +489,12 @@ func (d *DHT) findValueCallback(id, key []byte, from time.Time, callback func(va
 				// if we fail to write to the socket, send the error to the callback immediately
 				if j.finish(false) {
 					callback(nil, err)
-					return
+					return true
 				}
 			}
 		}
+
+		return false
 	}
 }
 
@@ -516,8 +528,8 @@ func (d *DHT) findNodes(ns []*node, target []byte, callback func(err error)) {
 	}
 }
 
-func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journey) func(*protocol.Event, error) {
-	return func(event *protocol.Event, err error) {
+func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journey) func(*protocol.Event, error) bool {
+	return func(event *protocol.Event, err error) bool {
 		_, shouldError := j.responseReceived()
 
 		// journey is completed, ignore this response
@@ -525,15 +537,16 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			// if there's an actual error, send that to the user
 			if shouldError {
 				callback(err)
+				return true
 			}
-			return
+			return false
 		}
 
 		payloadTable := new(flatbuffers.Table)
 
 		if !event.Payload(payloadTable) {
 			callback(errors.New("invalid response to find node request"))
-			return
+			return false
 		}
 
 		f := new(protocol.FindNode)
@@ -572,8 +585,9 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			// we've completed our search of nodes
 			if j.finish(false) {
 				callback(nil)
+				return true
 			}
-			return
+			return false
 		}
 
 		buf := d.pool.Get().(*flatbuffers.Builder)
@@ -595,9 +609,11 @@ func (d *DHT) findNodeCallback(target []byte, callback func(err error), j *journ
 			if err != nil {
 				// if we fail to write to the socket, send the error to the callback immediately
 				callback(err)
-				return
+				return false
 			}
 		}
+
+		return false
 	}
 }
 
@@ -631,7 +647,7 @@ func (d *DHT) monitor() {
 				n.address,
 				rid,
 				req,
-				func(event *protocol.Event, err error) {
+				func(event *protocol.Event, err error) bool {
 					if err != nil {
 						if errors.Is(err, ErrRequestTimeout) {
 							d.routing.remove(n.id)
@@ -641,6 +657,7 @@ func (d *DHT) monitor() {
 					} else {
 						d.routing.seen(n.id)
 					}
+					return true
 				},
 			)
 

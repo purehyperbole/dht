@@ -95,11 +95,7 @@ func (l *listener) process() {
 			// the registered callback
 			if e.Response() {
 				// update the senders last seen time in the routing table
-				callback, ok := l.cache.pop(e.IdBytes())
-				if ok {
-					callback(e, nil)
-				}
-
+				l.cache.callback(e.IdBytes(), e, nil)
 				l.packet.done(p)
 
 				continue
@@ -198,18 +194,57 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindValue)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	var resp []byte
-
 	vs, ok := l.storage.Get(f.KeyBytes(), time.Unix(f.From(), 0))
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
-		resp = eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, vs)
-	} else {
-		// we didn't find the key, so we find the K closest neighbours to the given target
-		nodes := l.routing.closestN(f.KeyBytes(), K)
-		resp = eventFindValueNotFoundResponse(l.buffer, event.IdBytes(), l.localID, nodes)
+
+		vcap := 1100
+
+		if len(vs) < vcap {
+			vcap = len(vs)
+		}
+
+		// we can fix a maximum of ~1055 values into a single udp packet, assuming empty values.
+		// calculated as: 65535 - 112 (event overhead) / 62 (value table with value length of 0)
+
+		// TODO we don't need this here, just slice the results from get appropriately
+		values := make([]*Value, 0, vcap)
+		var size int // total size of the current values
+
+		for i := range vs {
+			if size >= MaxEventSize {
+				resp := eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, values, len(vs))
+
+				err := l.write(addr, event.IdBytes(), resp)
+				if err != nil {
+					return err
+				}
+
+				// reset the values array and size
+				values = values[:0]
+				size = 0
+			}
+
+			// add the remaining value to the array
+			// for the next packet. 50 is the overhead
+			// of the data in the value table
+			values = append(values, vs[i])
+			size = size + len(vs[i].Key) + len(vs[i].Value) + 50
+		}
+
+		// send any unfinished values
+		if len(values) > 0 {
+			resp := eventFindValueFoundResponse(l.buffer, event.IdBytes(), l.localID, values, len(vs))
+			return l.write(addr, event.IdBytes(), resp)
+		}
+
+		return nil
 	}
+
+	// we didn't find the key, so we find the K closest neighbours to the given target
+	nodes := l.routing.closestN(f.KeyBytes(), K)
+	resp := eventFindValueNotFoundResponse(l.buffer, event.IdBytes(), l.localID, nodes)
 
 	return l.write(addr, event.IdBytes(), resp)
 }
@@ -236,11 +271,12 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 				rid := pseudorandomID()
 				req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-				err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+				err := l.request(to, rid, req, func(ev *protocol.Event, err error) bool {
 					if err != nil {
 						// just log this error for now, but it might be best to attempt to resend?
 						log.Println(err)
 					}
+					return true
 				})
 
 				if err != nil {
@@ -271,11 +307,12 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 		rid := pseudorandomID()
 		req := eventStoreRequest(l.buffer, rid, l.localID, values)
 
-		err := l.request(to, rid, req, func(ev *protocol.Event, err error) {
+		err := l.request(to, rid, req, func(ev *protocol.Event, err error) bool {
 			if err != nil {
 				// just log this error for now, but it might be best to attempt to resend?
 				log.Println(err)
 			}
+			return true
 		})
 
 		if err != nil {
@@ -285,7 +322,7 @@ func (l *listener) transferKeys(to *net.UDPAddr, id []byte) {
 	}
 }
 
-func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(event *protocol.Event, err error)) error {
+func (l *listener) request(to *net.UDPAddr, id []byte, data []byte, cb func(event *protocol.Event, err error) bool) error {
 	// register the callback for this request
 	l.cache.set(id, time.Now().Add(l.timeout), cb)
 
@@ -300,8 +337,6 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	var fragmentCount int
 
 	for f != nil {
 		l.writeBatch[l.writeBatchSize].Addr = to
@@ -320,14 +355,7 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 		}
 
 		f = p.next()
-		fragmentCount++
 	}
-
-	/*
-		if fragmentCount > 1 {
-			fmt.Println(fragmentCount)
-		}
-	*/
 
 	return nil
 }

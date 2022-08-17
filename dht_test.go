@@ -183,8 +183,6 @@ func TestDHTLocalStoreFind(t *testing.T) {
 }
 
 func TestDHTLocalStoreFindMultiple(t *testing.T) {
-	t.Skip()
-
 	bc := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
@@ -214,20 +212,32 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 	}
 
 	// create a channel to handle our callback in a blocking way
-	ch := make(chan error, 1)
+	ch := make(chan error, 1000)
+
+	var hasher maphash.Hash
+	hasher.SetSeed(maphash.MakeSeed())
 
 	// attempt to store some values to the same key
 	key := randomID()
 
-	values := make([][]byte, 10000)
+	values := make(map[uint64]struct{})
 
-	for i := 0; i < len(values); i++ {
-		values[i] = randomID()
+	for i := 0; i < 1000; i++ {
+		value := make([]byte, 256)
+		rand.Read(value)
 
-		bdht.Store(key, values[i], time.Hour, func(err error) {
+		hasher.Reset()
+		hasher.Write(value)
+		v := hasher.Sum64()
+
+		values[v] = struct{}{}
+
+		bdht.Store(key, value, time.Hour, func(err error) {
 			ch <- err
 		})
+	}
 
+	for i := 0; i < 1000; i++ {
 		require.Nil(t, <-ch)
 	}
 
@@ -237,7 +247,7 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 	}
 
 	// create a channel for our query responses
-	ch2 := make(chan resp, 10000)
+	ch2 := make(chan resp, 1000)
 
 	bdht.Find(key, func(v []byte, err error) {
 		rv := make([]byte, len(v))
@@ -245,10 +255,18 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 		ch2 <- resp{data: rv, err: err}
 	})
 
-	for i := 0; i < len(values); i++ {
+	for i := 0; i < 1000; i++ {
 		r := <-ch2
 		require.Nil(t, r.err)
-		assert.Equal(t, values[i], r.data)
+
+		hasher.Reset()
+		hasher.Write(r.data)
+		v := hasher.Sum64()
+
+		_, ok := values[v]
+		assert.True(t, ok)
+
+		delete(values, v)
 	}
 }
 

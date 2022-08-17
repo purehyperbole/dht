@@ -511,8 +511,20 @@ func (rcv *FindValue) MutateFrom(n int64) bool {
 	return rcv._tab.MutateInt64Slot(10, n)
 }
 
+func (rcv *FindValue) Found() int64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	if o != 0 {
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *FindValue) MutateFound(n int64) bool {
+	return rcv._tab.MutateInt64Slot(12, n)
+}
+
 func FindValueStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(5)
 }
 func FindValueAddKey(builder *flatbuffers.Builder, key flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(key), 0)
@@ -534,6 +546,9 @@ func FindValueStartNodesVector(builder *flatbuffers.Builder, numElems int) flatb
 }
 func FindValueAddFrom(builder *flatbuffers.Builder, from int64) {
 	builder.PrependInt64Slot(3, from, 0)
+}
+func FindValueAddFound(builder *flatbuffers.Builder, found int64) {
+	builder.PrependInt64Slot(4, found, 0)
 }
 func FindValueEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

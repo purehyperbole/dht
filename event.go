@@ -225,7 +225,7 @@ func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte, fro
 	return buf.FinishedBytes()
 }
 
-func eventFindValueFoundResponse(buf *flatbuffers.Builder, id, sender []byte, values []*Value) []byte {
+func eventFindValueFoundResponse(buf *flatbuffers.Builder, id, sender []byte, values []*Value, found int) []byte {
 	buf.Reset()
 
 	// construct the value vector
@@ -253,6 +253,7 @@ func eventFindValueFoundResponse(buf *flatbuffers.Builder, id, sender []byte, va
 
 	protocol.FindValueStart(buf)
 	protocol.FindValueAddValues(buf, vv)
+	protocol.FindValueAddFound(buf, int64(found))
 	fv := protocol.FindValueEnd(buf)
 
 	// construct the response event table
