@@ -301,6 +301,8 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	var fragmentCount int
+
 	for f != nil {
 		l.writeBatch[l.writeBatchSize].Addr = to
 		// set the len of the buffer without allocating a new buffer
@@ -318,7 +320,14 @@ func (l *listener) write(to *net.UDPAddr, id, data []byte) error {
 		}
 
 		f = p.next()
+		fragmentCount++
 	}
+
+	/*
+		if fragmentCount > 1 {
+			fmt.Println(fragmentCount)
+		}
+	*/
 
 	return nil
 }

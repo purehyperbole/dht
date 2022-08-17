@@ -28,6 +28,22 @@ type item struct {
 	mu       sync.Mutex
 }
 
+func (i *item) insert(hash uint64, value *Value) bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	_, ok := i.contains[hash]
+	if ok {
+		return true
+	}
+
+	// TODO this will be really slow, but good enough for now
+	i.contains[hash] = struct{}{}
+	i.values = append(i.values, value)
+
+	return true
+}
+
 // implement simple storage for now storage
 type storage struct {
 	store  sync.Map
@@ -130,7 +146,13 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 		expires: time.Now().Add(ttl),
 	}
 
-	actual, ok := s.store.LoadOrStore(key, &item{
+	// loading first is apparently faster?
+	actual, ok := s.store.Load(key)
+	if ok {
+		return actual.(*item).insert(vh, value)
+	}
+
+	actual, ok = s.store.LoadOrStore(key, &item{
 		contains: map[uint64]struct{}{vh: {}},
 		values:   []*Value{value},
 	})
@@ -139,21 +161,7 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 		return true
 	}
 
-	existing := actual.(*item)
-
-	existing.mu.Lock()
-	defer existing.mu.Unlock()
-
-	_, ok = existing.contains[vh]
-	if ok {
-		return true
-	}
-
-	// TODO this will be really slow, but good enough for now
-	existing.contains[vh] = struct{}{}
-	existing.values = append(existing.values, value)
-
-	return true
+	return actual.(*item).insert(vh, value)
 }
 
 // Iterate iterates over keys in the storage

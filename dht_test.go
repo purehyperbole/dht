@@ -183,18 +183,35 @@ func TestDHTLocalStoreFind(t *testing.T) {
 }
 
 func TestDHTLocalStoreFindMultiple(t *testing.T) {
-	c := &Config{
+	t.Skip()
+
+	bc := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
 	}
 
 	// create a new dht with no nodes
-	dht, err := New(c)
+	bdht, err := New(bc)
 	require.Nil(t, err)
-	defer dht.Close()
+	defer bdht.Close()
 
 	// wait some time for the listeners to start
 	time.Sleep(time.Millisecond * 200)
+
+	for i := 0; i < 20; i++ {
+		c := &Config{
+			LocalID:       randomID(),
+			ListenAddress: fmt.Sprintf("127.0.0.1:%d", 9001+i),
+			BootstrapAddresses: []string{
+				bc.ListenAddress,
+			},
+		}
+
+		// create a new dht with no nodes
+		dht, err := New(c)
+		require.Nil(t, err)
+		defer dht.Close()
+	}
 
 	// create a channel to handle our callback in a blocking way
 	ch := make(chan error, 1)
@@ -202,12 +219,12 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 	// attempt to store some values to the same key
 	key := randomID()
 
-	values := make([][]byte, 10)
+	values := make([][]byte, 10000)
 
 	for i := 0; i < len(values); i++ {
 		values[i] = randomID()
 
-		dht.Store(key, values[i], time.Hour, func(err error) {
+		bdht.Store(key, values[i], time.Hour, func(err error) {
 			ch <- err
 		})
 
@@ -220,9 +237,9 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 	}
 
 	// create a channel for our query responses
-	ch2 := make(chan resp, 10)
+	ch2 := make(chan resp, 10000)
 
-	dht.Find(key, func(v []byte, err error) {
+	bdht.Find(key, func(v []byte, err error) {
 		rv := make([]byte, len(v))
 		copy(rv, v)
 		ch2 <- resp{data: rv, err: err}
