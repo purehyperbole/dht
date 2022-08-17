@@ -50,7 +50,9 @@ func (i *item) insert(hash uint64, value *Value) bool {
 
 // implement simple storage for now storage
 type storage struct {
-	store  sync.Map
+	// store  sync.Map#
+	store  map[uint64]*item
+	mu     sync.Mutex
 	hasher sync.Pool
 	stored int64
 }
@@ -61,7 +63,8 @@ func newInMemoryStorage() *storage {
 	seed := maphash.MakeSeed()
 
 	s := &storage{
-		store: sync.Map{},
+		// store: sync.Map{},
+		store: make(map[uint64]*item),
 		hasher: sync.Pool{
 			New: func() any {
 				var hasher maphash.Hash
@@ -86,35 +89,36 @@ func (s *storage) Get(k []byte, from time.Time) ([]*Value, bool) {
 
 	s.hasher.Put(h)
 
-	v, ok := s.store.Load(key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	v, ok := s.store[key]
 	if !ok {
 		return nil, false
 	}
 
-	it := v.(*item)
-
 	// if we don't need to filter the query, then return all values
 	if from.IsZero() {
-		return v.(*item).values, true
+		return v.values, true
 	}
 
 	var index int
 
 	// filter the query to values after a given date
-	for i := 0; i < len(it.values); i++ {
-		if it.values[i].Created.Before(from) {
+	for i := 0; i < len(v.values); i++ {
+		if v.values[i].Created.Before(from) {
 			// TODO : might be a bit wonky if created from timestamps are not in order
 			index++
 		}
 	}
 
 	// we have no results left that are valid for the query
-	if index >= len(it.values) {
+	if index >= len(v.values) {
 		return nil, false
 	}
 
 	// TODO : actually store and return multiple values
-	return it.values[index:], true
+	return v.values[index:], true
 }
 
 // Set sets a key value pair for a given ttl
@@ -133,20 +137,19 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	h := s.hasher.Get().(*maphash.Hash)
 
 	h.Reset()
-	h.Write(k)
+	h.Write(kc)
 	key := h.Sum64()
 
 	// hash the value so we can check if we have stored it already
 
-	/*
-		h.Reset()
-		h.Write(v)
-		vh := h.Sum64()
-	*/
-
-	vh := uint64(0)
+	h.Reset()
+	h.Write(vc)
+	vh := h.Sum64()
 
 	s.hasher.Put(h)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	value := &Value{
 		Key:     kc,
@@ -157,41 +160,38 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	}
 
 	// loading first is apparently faster?
-	actual, ok := s.store.Load(key)
+	actual, ok := s.store[key]
 	if ok {
-		return actual.(*item).insert(vh, value)
+		return actual.insert(vh, value)
 	}
 
-	actual, ok = s.store.LoadOrStore(key, &item{
+	s.store[key] = &item{
 		// contains: map[uint64]struct{}{vh: {}},
 		values: []*Value{value},
-	})
-
-	if !ok {
-		atomic.AddInt64(&s.stored, int64(len(vc)))
-		return true
 	}
 
-	return actual.(*item).insert(vh, value)
+	return true
 }
 
 // Iterate iterates over keys in the storage
 func (s *storage) Iterate(cb func(v *Value) bool) {
-	s.store.Range(func(ky any, vl any) bool {
-		item := vl.(*item)
+	/*
+		s.store.Range(func(ky any, vl any) bool {
+			item := vl.(*item)
 
-		//item.mu.Lock()
+			//item.mu.Lock()
 
-		for i := range item.values {
-			if !cb(item.values[i]) {
-				return false
+			for i := range item.values {
+				if !cb(item.values[i]) {
+					return false
+				}
 			}
-		}
 
-		//item.mu.Unlock()
+			//item.mu.Unlock()
 
-		return true
-	})
+			return true
+		})
+	*/
 }
 
 func (s *storage) storedBytes() int64 {
@@ -203,22 +203,23 @@ func (s *storage) cleanup() {
 		// scan the storage to check for values that have expired
 		time.Sleep(time.Minute)
 
-		now := time.Now()
+		/*
+			now := time.Now()
+				s.store.Range(func(ky any, vl any) bool {
+					item := vl.(*item)
+					//item.mu.Lock()
 
-		s.store.Range(func(ky any, vl any) bool {
-			item := vl.(*item)
-			//item.mu.Lock()
+					for i := range item.values {
+						if item.values[i].expires.After(now) {
+							atomic.AddInt64(&s.stored, -int64(len(item.values[i].Value)))
+							s.store.Delete(ky)
+						}
+					}
 
-			for i := range item.values {
-				if item.values[i].expires.After(now) {
-					atomic.AddInt64(&s.stored, -int64(len(item.values[i].Value)))
-					s.store.Delete(ky)
-				}
-			}
+					//item.mu.Unlock()
 
-			//item.mu.Unlock()
-
-			return true
-		})
+					return true
+				})
+		*/
 	}
 }
