@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"runtime"
@@ -69,7 +71,15 @@ func New(cfg *Config) (*DHT, error) {
 	}
 
 	if cfg.Storage == nil {
-		cfg.Storage = newInMemoryStorage()
+		ims := newInMemoryStorage()
+		cfg.Storage = ims
+
+		go func() {
+			for {
+				time.Sleep(time.Second)
+				fmt.Println(hex.EncodeToString(cfg.LocalID), ims.storedBytes())
+			}
+		}()
 	}
 
 	addr, err := net.ResolveUDPAddr("udp", cfg.ListenAddress)

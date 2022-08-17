@@ -3,6 +3,7 @@ package dht
 import (
 	"hash/maphash"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,6 +49,7 @@ func (i *item) insert(hash uint64, value *Value) bool {
 type storage struct {
 	store  sync.Map
 	hasher sync.Pool
+	stored int64
 }
 
 func newInMemoryStorage() *storage {
@@ -158,6 +160,7 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	})
 
 	if !ok {
+		atomic.AddInt64(&s.stored, int64(len(vc)))
 		return true
 	}
 
@@ -183,6 +186,10 @@ func (s *storage) Iterate(cb func(v *Value) bool) {
 	})
 }
 
+func (s *storage) storedBytes() int64 {
+	return atomic.LoadInt64(&s.stored)
+}
+
 func (s *storage) cleanup() {
 	for {
 		// scan the storage to check for values that have expired
@@ -196,6 +203,7 @@ func (s *storage) cleanup() {
 
 			for i := range item.values {
 				if item.values[i].expires.After(now) {
+					atomic.AddInt64(&s.stored, -int64(len(item.values[i].Value)))
 					s.store.Delete(ky)
 				}
 			}
