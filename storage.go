@@ -24,22 +24,25 @@ type Value struct {
 }
 
 type item struct {
-	contains map[uint64]struct{}
-	values   []*Value
-	mu       sync.Mutex
+	//contains map[uint64]struct{}
+	values []*Value
+	// mu     sync.Mutex
 }
 
 func (i *item) insert(hash uint64, value *Value) bool {
-	i.mu.Lock()
-	defer i.mu.Unlock()
+	/*
+		i.mu.Lock()
+		defer i.mu.Unlock()
 
-	_, ok := i.contains[hash]
-	if ok {
-		return true
-	}
+			_, ok := i.contains[hash]
+			if ok {
+				return true
+			}
 
-	// TODO this will be really slow, but good enough for now
-	i.contains[hash] = struct{}{}
+			// TODO this will be really slow, but good enough for now
+			i.contains[hash] = struct{}{}
+	*/
+
 	i.values = append(i.values, value)
 
 	return true
@@ -155,8 +158,8 @@ func (s *storage) Set(k, v []byte, created time.Time, ttl time.Duration) bool {
 	}
 
 	actual, ok = s.store.LoadOrStore(key, &item{
-		contains: map[uint64]struct{}{vh: {}},
-		values:   []*Value{value},
+		// contains: map[uint64]struct{}{vh: {}},
+		values: []*Value{value},
 	})
 
 	if !ok {
@@ -172,7 +175,7 @@ func (s *storage) Iterate(cb func(v *Value) bool) {
 	s.store.Range(func(ky any, vl any) bool {
 		item := vl.(*item)
 
-		item.mu.Lock()
+		//item.mu.Lock()
 
 		for i := range item.values {
 			if !cb(item.values[i]) {
@@ -180,7 +183,7 @@ func (s *storage) Iterate(cb func(v *Value) bool) {
 			}
 		}
 
-		item.mu.Unlock()
+		//item.mu.Unlock()
 
 		return true
 	})
@@ -199,7 +202,7 @@ func (s *storage) cleanup() {
 
 		s.store.Range(func(ky any, vl any) bool {
 			item := vl.(*item)
-			item.mu.Lock()
+			//item.mu.Lock()
 
 			for i := range item.values {
 				if item.values[i].expires.After(now) {
@@ -208,7 +211,7 @@ func (s *storage) cleanup() {
 				}
 			}
 
-			item.mu.Unlock()
+			//item.mu.Unlock()
 
 			return true
 		})
