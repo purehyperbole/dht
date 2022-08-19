@@ -59,7 +59,7 @@ func eventStoreRequest(buf *flatbuffers.Builder, id, sender []byte, values []*Va
 		protocol.ValueStart(buf)
 		protocol.ValueAddKey(buf, k)
 		protocol.ValueAddValue(buf, v)
-		protocol.ValueAddCreated(buf, value.Created.Unix())
+		protocol.ValueAddCreated(buf, value.Created.UnixNano())
 		protocol.ValueAddTtl(buf, int64(value.TTL))
 		vs[i] = protocol.ValueEnd(buf)
 	}
@@ -204,7 +204,7 @@ func eventFindValueRequest(buf *flatbuffers.Builder, id, sender, key []byte, fro
 
 	protocol.FindValueStart(buf)
 	protocol.FindValueAddKey(buf, k)
-	protocol.FindValueAddFrom(buf, from.Unix())
+	protocol.FindValueAddFrom(buf, from.UnixNano())
 	fv := protocol.FindValueEnd(buf)
 
 	// build the event to send

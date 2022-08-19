@@ -156,7 +156,7 @@ func (l *listener) store(event *protocol.Event, addr *net.UDPAddr) error {
 	for i := 0; i < s.ValuesLength(); i++ {
 		v := new(protocol.Value)
 		if s.Values(v, i) {
-			l.storage.Set(v.KeyBytes(), v.ValueBytes(), time.Unix(v.Created(), 0), time.Duration(v.Ttl()))
+			l.storage.Set(v.KeyBytes(), v.ValueBytes(), time.Unix(0, v.Created()), time.Duration(v.Ttl()))
 		}
 	}
 
@@ -194,7 +194,7 @@ func (l *listener) findValue(event *protocol.Event, addr *net.UDPAddr) error {
 	f := new(protocol.FindValue)
 	f.Init(payloadTable.Bytes, payloadTable.Pos)
 
-	vs, ok := l.storage.Get(f.KeyBytes(), time.Unix(f.From(), 0))
+	vs, ok := l.storage.Get(f.KeyBytes(), time.Unix(0, f.From()))
 	if ok {
 		// we found the key in our storage, so we return it to the requester
 		// construct the find node table
