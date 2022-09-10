@@ -222,8 +222,8 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 
 	values := make(map[uint64]struct{})
 
-	for i := 0; i < 1000; i++ {
-		value := make([]byte, 256)
+	for i := 0; i < 100; i++ {
+		value := make([]byte, 10)
 		rand.Read(value)
 
 		hasher.Reset()
@@ -237,7 +237,7 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100; i++ {
 		require.Nil(t, <-ch)
 	}
 
@@ -247,7 +247,7 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 	}
 
 	// create a channel for our query responses
-	ch2 := make(chan resp, 1000)
+	ch2 := make(chan resp, 100)
 
 	bdht.Find(key, func(v []byte, err error) {
 		rv := make([]byte, len(v))
@@ -255,7 +255,7 @@ func TestDHTLocalStoreFindMultiple(t *testing.T) {
 		ch2 <- resp{data: rv, err: err}
 	})
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100; i++ {
 		r := <-ch2
 		require.Nil(t, r.err)
 
