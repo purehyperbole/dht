@@ -23,7 +23,7 @@ func wait(ch chan interface{}, timeout time.Duration) error {
 	select {
 	case <-ch:
 		return nil
-	case <-time.After(time.Second * 2):
+	case <-time.After(timeout):
 		return errors.New("timeout")
 	}
 }
@@ -618,7 +618,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 	for i := 0; i < len(keys); i++ {
 		k := randomID()
 
-		bdht.Store(k, k, time.Hour, func(err error) {
+		bdht.Store(k, k[:1], time.Hour, func(err error) {
 			ch <- err
 		})
 
@@ -638,7 +638,7 @@ func TestDHTClusterNodeJoinLeave(t *testing.T) {
 		// to be replicated to the joining nodes
 		// TODO : improve this
 		for {
-			if wait(transferred, time.Second*10) != nil {
+			if wait(transferred, time.Millisecond*500) != nil {
 				wg.Done()
 				return
 			}
