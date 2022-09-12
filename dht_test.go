@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/maphash"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -600,6 +601,10 @@ func TestDHTClusterNodeJoin(t *testing.T) {
 }
 
 func TestDHTClusterNodeJoinLeave(t *testing.T) {
+	if os.Getenv("CI") == "true" {
+		t.Skip("skipping test")
+	}
+
 	bc := &Config{
 		LocalID:       randomID(),
 		ListenAddress: "127.0.0.1:9000",
